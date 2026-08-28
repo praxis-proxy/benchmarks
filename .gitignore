@@ -1,0 +1,26 @@
+# Cargo build output
+target
+
+# Rustfmt backup files
+**/*.rs.bk
+
+# Cargo mutants output
+**/mutants.out*/
+
+# LLVM coverage artifacts
+coverage/
+coverage.json
+*.profraw
+*.profdata
+
+# IDEs
+.idea/
+
+# Dotdirs (allow .cargo/, .claude/, .github/, and .hooks/)
+.*/
+!.cargo/
+!.github/
+!.claude/
+!.hooks/
+.claude/*
+!.claude/CLAUDE.md

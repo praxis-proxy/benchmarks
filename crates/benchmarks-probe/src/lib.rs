@@ -1,0 +1,67 @@
+//! Probe library that verifies the workspace toolchain, lint, and security
+//! configuration against a real compilation unit.
+//!
+//! This crate is a placeholder so the repository's quality gates have
+//! something to chew on: `make lint`, `make test`, `make doc`, `make audit`,
+//! and `make coverage-check` all exercise it. Replace it with the benchmark
+//! harness crates once they are extracted here.
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/// Greeting emitted by the probe binary at startup.
+pub const GREETING: &str = "benchmarks probe";
+
+/// Adds two byte counts, saturating at `usize::MAX`.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(benchmarks_probe::saturating_total(2, 3), 5);
+/// ```
+#[must_use]
+pub fn saturating_total(lhs: usize, rhs: usize) -> usize {
+    lhs.saturating_add(rhs)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::saturating_total;
+
+    #[test]
+    fn total_adds_small_values() {
+        assert_eq!(saturating_total(2, 3), 5, "small sums must add exactly");
+    }
+
+    #[test]
+    fn total_saturates_at_bounds() {
+        assert_eq!(
+            saturating_total(usize::MAX, 1),
+            usize::MAX,
+            "overflow must saturate at usize::MAX"
+        );
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn total_is_commutative(lhs: usize, rhs: usize) {
+            proptest::prop_assert_eq!(
+                saturating_total(lhs, rhs),
+                saturating_total(rhs, lhs),
+                "saturating addition must be commutative"
+            );
+        }
+
+        #[test]
+        fn total_never_shrinks_inputs(lhs: usize, rhs: usize) {
+            let total = saturating_total(lhs, rhs);
+
+            proptest::prop_assert!(total >= lhs.max(rhs), "total {} must be at least max({}, {})", total, lhs, rhs);
+        }
+    }
+}
