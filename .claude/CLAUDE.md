@@ -9,13 +9,25 @@ repository.
 The shared benchmarking and performance-testing
 tooling for the praxis-proxy project, intended to be
 usable across repositories with a standard proxy build
-(praxis, ai, experimental). The repository currently
-carries only the praxis-proxy conventions scaffolding;
-its sole member is `benchmarks-probe`, a placeholder
-lib + bin crate that keeps every quality gate (build,
-lint, doc, test, coverage, audit) running against real
-code. It will be replaced by the benchmark harness
-once that is extracted here.
+(praxis, ai, experimental). The sole member is
+`praxis-bench` (`crates/praxis-bench`), a lib + bin
+crate: the library is the load-test / comparison
+harness (runner, scenarios, result/report types,
+Docker stats, vegeta/fortio wrappers, and a
+`ProxyConfig` trait with praxis/envoy/nginx/haproxy
+adapters), and the binary is the `praxis-bench` CLI
+(run, `visualize`, `compare`).
+
+The proxy under test is treated as an opaque container
+image supplied via `--image`, so any Praxis-compatible
+build can be benchmarked without depending on its
+source. The container image (`Containerfile`) is a
+generic runner: it bundles the `docker` CLI plus the
+vegeta/fortio load generators, so you can plug in a
+Praxis image and get results. The criterion
+microbenchmarks are intentionally not here; they live
+with the internal APIs they measure in the praxis
+repository's `tests/`.
 
 ## Requirements
 

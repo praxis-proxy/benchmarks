@@ -1,0 +1,40 @@
+[package]
+name = "praxis-bench"
+description = "Generic load-testing and comparison benchmark tool for the Praxis proxy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "praxis_bench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "praxis-bench"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { workspace = true }
+clap = { workspace = true }
+plotters = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = [
+  "rt-multi-thread",
+  "macros",
+  "time",
+  "process",
+  "fs",
+  "io-util",
+  "net",
+] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

@@ -7,8 +7,7 @@ NIGHTLY          ?= nightly
 V                ?=
 
 # Crates verified by publish-dry-run, in dependency order.
-# Replace with the benchmark harness crate(s) once they are extracted here.
-PUBLISH_CRATES   := benchmarks-probe
+PUBLISH_CRATES   := praxis-bench
 
 # Tools verified by check-prereqs before their consuming targets run.
 LINT_CMDS        := cargo cargo-machete
@@ -123,15 +122,23 @@ audit: check-prereqs-audit
 	cargo audit
 	cargo deny check
 
+# Modules excluded from the coverage floor. The CLI, runner, network
+# readiness polling, external load-generator wrappers, and Docker-command
+# proxy adapters only execute against live containers, external tools, and
+# the network, so they are exercised by real benchmark runs rather than unit
+# tests. The floor is enforced on the unit-testable logic core (result,
+# scenario, stats, error).
+COVERAGE_IGNORE := (src/main\.rs|src/bench|src/runner\.rs|src/net\.rs|src/tools/|src/proxy/)
+
 coverage:
 	cargo llvm-cov --workspace --html --output-dir target/coverage \
-		--ignore-filename-regex 'src/main\.rs' \
+		--ignore-filename-regex '$(COVERAGE_IGNORE)' \
 		--fail-under-lines 90 \
 		--fail-under-regions 80
 
 coverage-check:
 	cargo llvm-cov --workspace \
-		--ignore-filename-regex 'src/main\.rs' \
+		--ignore-filename-regex '$(COVERAGE_IGNORE)' \
 		--fail-under-lines 90 \
 		--fail-under-regions 80
 

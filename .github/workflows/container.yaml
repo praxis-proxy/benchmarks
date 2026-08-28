@@ -4,9 +4,10 @@ name: Container
 # Workflow Settings
 # ------------------------------------------------------------------------------
 #
-# Builds the Containerfile and runs the resulting image once. The probe
-# binary runs to completion; a long-running service should instead add a
-# HEALTHCHECK to the Containerfile and wait for healthy status here.
+# Builds the Containerfile and smoke-tests the resulting runner image by
+# invoking the CLI (`praxis-bench --help`), which must exit cleanly. An
+# end-to-end benchmark run additionally needs the host Docker socket and
+# network, so it is not exercised here.
 
 on:
   push:
@@ -37,7 +38,7 @@ jobs:
           persist-credentials: false
 
       - name: Build container image
-        run: docker build -t project:ci -f Containerfile .
+        run: docker build -t praxis-bench:ci -f Containerfile .
 
-      - name: Run container
-        run: docker run --rm project:ci
+      - name: Smoke-test the runner CLI
+        run: docker run --rm praxis-bench:ci --help

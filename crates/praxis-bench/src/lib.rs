@@ -1,0 +1,36 @@
+#![deny(unreachable_pub)]
+#![expect(
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::impl_trait_in_params,
+    clippy::min_ident_chars,
+    clippy::mod_module_files,
+    clippy::wildcard_enum_match_arm,
+    reason = "TODO(conventions-sync): fix violations and remove"
+)]
+
+//! Benchmark tool and library for the Praxis proxy.
+//!
+//! Uses [Vegeta] and [Fortio] to benchmark.
+//!
+//! [Vegeta]: https://github.com/tsenart/vegeta
+//! [Fortio]: https://fortio.org/
+
+/// Error types for benchmark operations.
+pub mod error;
+/// Network utilities for benchmark orchestration.
+pub mod net;
+/// Proxy configuration trait and built-in implementations.
+pub mod proxy;
+/// Top-level benchmark report type.
+pub mod report;
+/// Benchmark result types and comparison logic.
+pub mod result;
+/// Runner orchestration (warmup, measurement, repetition).
+pub mod runner;
+/// Scenario definition and configuration.
+pub mod scenario;
+/// Docker container resource metrics collection.
+pub mod stats;
+/// External load generator tool wrappers.
+pub mod tools;

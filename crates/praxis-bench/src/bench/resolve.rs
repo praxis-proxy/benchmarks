@@ -1,0 +1,166 @@
+//! Workload and proxy name resolution from CLI arguments.
+
+use std::time::Duration;
+
+use praxis_bench::scenario::{Scenario, Workload};
+
+use super::cli::Args;
+
+// -----------------------------------------------------------------------------
+// Constants
+// -----------------------------------------------------------------------------
+
+/// All workload type names.
+const ALL_WORKLOADS: &[&str] = &[
+    "high-concurrency-small-requests",
+    "large-payloads",
+    "large-payloads-high-concurrency",
+    "high-connection-count",
+    "sustained",
+    "ramp",
+    "tcp-throughput",
+    "tcp-connection-rate",
+];
+
+// -----------------------------------------------------------------------------
+// Proxy Names
+// -----------------------------------------------------------------------------
+
+/// Ensure praxis is always included and deduplicate.
+pub(crate) fn resolve_proxy_names(proxies: &[String]) -> Vec<String> {
+    let mut names: Vec<String> = vec!["praxis".into()];
+    for p in proxies {
+        let lower = p.to_lowercase();
+        if lower != "praxis" && !names.contains(&lower) {
+            names.push(lower);
+        }
+    }
+    names
+}
+
+// -----------------------------------------------------------------------------
+// Workloads
+// -----------------------------------------------------------------------------
+
+/// Resolve selected workloads (default: all).
+pub(crate) fn resolve_workloads(args: &Args) -> Vec<String> {
+    if args.workloads.is_empty() {
+        ALL_WORKLOADS.iter().map(|s| (*s).into()).collect()
+    } else {
+        args.workloads.clone()
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Scenarios
+// -----------------------------------------------------------------------------
+
+/// Build [`Scenario`] list from CLI args and workload names.
+///
+/// [`Scenario`]: praxis_bench::scenario::Scenario
+pub(crate) fn build_scenarios(args: &Args, workload_names: &[String]) -> Vec<Scenario> {
+    workload_names
+        .iter()
+        .map(|name| {
+            let workload = parse_workload(name, args);
+            let duration = if matches!(workload, Workload::Sustained) {
+                Duration::from_secs(args.sustained_duration)
+            } else {
+                Duration::from_secs(args.duration)
+            };
+            Scenario {
+                name: name.clone(),
+                workload,
+                warmup: Duration::from_secs(args.warmup),
+                duration,
+                runs: args.runs,
+            }
+        })
+        .collect()
+}
+
+/// Parse a workload name string into a [`Workload`] enum variant.
+///
+/// Exits the process if the name is unknown.
+///
+/// [`Workload`]: praxis_bench::scenario::Workload
+fn parse_workload(name: &str, args: &Args) -> Workload {
+    match name {
+        "high-concurrency-small-requests" => Workload::SmallRequests {
+            concurrency: args.concurrency,
+        },
+        "large-payloads" => Workload::LargePayload {
+            body_size: args.body_size,
+        },
+        "large-payloads-high-concurrency" => Workload::LargePayloadHighConcurrency {
+            concurrency: args.concurrency,
+            body_size: args.body_size,
+        },
+        "high-connection-count" => Workload::HighConnectionCount {
+            connections: args.connections,
+        },
+        "sustained" => Workload::Sustained,
+        "ramp" => Workload::Ramp {
+            start_qps: args.start_qps,
+            end_qps: args.end_qps,
+            step: args.step,
+        },
+        "tcp-throughput" => Workload::TcpThroughput,
+        "tcp-connection-rate" => Workload::TcpConnectionRate,
+        other => {
+            eprintln!(
+                "error: unknown workload '{other}'\n\nvalid workloads: {}",
+                ALL_WORKLOADS.join(", ")
+            );
+            std::process::exit(1);
+        },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+#[expect(clippy::allow_attributes, reason = "blanket test suppressions")]
+#[allow(clippy::unwrap_used, reason = "tests")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_proxy_names_always_includes_praxis() {
+        let names = resolve_proxy_names(&[]);
+        assert_eq!(names, vec!["praxis"], "empty input should default to praxis only");
+    }
+
+    #[test]
+    fn resolve_proxy_names_deduplicates() {
+        let names = resolve_proxy_names(&["praxis".into(), "envoy".into(), "envoy".into()]);
+        assert_eq!(names, vec!["praxis", "envoy"], "duplicates should be removed");
+    }
+
+    #[test]
+    fn resolve_proxy_names_case_insensitive() {
+        let names = resolve_proxy_names(&["PRAXIS".into(), "Envoy".into()]);
+        assert_eq!(
+            names,
+            vec!["praxis", "envoy"],
+            "names should be lowercased and praxis not duplicated"
+        );
+    }
+
+    #[test]
+    fn resolve_proxy_names_praxis_always_first() {
+        let names = resolve_proxy_names(&["nginx".into(), "envoy".into()]);
+        assert_eq!(
+            names.first().map(String::as_str),
+            Some("praxis"),
+            "praxis should always be the first entry"
+        );
+    }
+
+    #[test]
+    fn all_workloads_constant_has_expected_count() {
+        assert_eq!(ALL_WORKLOADS.len(), 8, "ALL_WORKLOADS should have 8 entries");
+    }
+}

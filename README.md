@@ -1,17 +1,49 @@
 # Praxis Benchmarks
 
-Shared benchmarking and performance-testing tooling for
-[Praxis](https://github.com/praxis-proxy/praxis), intended to be reusable
-across repositories with a standard proxy build (praxis, ai, experimental).
+`praxis-bench` is the shared benchmarking and performance-testing tool for
+[Praxis](https://github.com/praxis-proxy/praxis). It load-tests a Praxis (or
+compatible) proxy image and produces comparison reports against Envoy, NGINX,
+and HAProxy baselines, so any repository with a standard proxy build (praxis,
+ai, experimental) can measure it the same way.
 
-This repository has adopted the praxis-proxy
-[conventions](https://github.com/praxis-proxy/conventions): the same lint
-configuration, quality gates, supply-chain checks, and release pipeline used
-across the organization. The benchmark harness itself has not landed here yet;
-the `benchmarks-probe` crate is a temporary placeholder that keeps every gate
-verifiable against real code until the harness is extracted.
+The proxy under test is treated as an opaque container image: plug in your
+image with `--image` and get results. The tool does not depend on Praxis
+source.
+
+## Usage
+
+Run the CLI directly:
+
+```console
+cargo run -p praxis-bench -- --image ghcr.io/praxis-proxy/praxis:latest
+```
+
+Or use the container runner, which bundles the `docker` CLI and the
+`vegeta`/`fortio` load generators. Share the host Docker socket and network so
+it can start proxy containers and reach them:
+
+```console
+docker run --rm --network host \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/praxis-proxy/benchmarks --image ghcr.io/praxis-proxy/praxis:latest
+```
+
+Subcommands:
+
+```console
+praxis-bench                 # run benchmarks, write a report
+praxis-bench visualize ...   # render an SVG chart from a report
+praxis-bench compare A B     # compare two reports for regressions
+```
+
+A full run needs a Docker (or Podman) daemon and the `vegeta` and `fortio`
+load generators on PATH; both are bundled in the container image.
 
 ## What Is Enforced
+
+This repository follows the praxis-proxy
+[conventions](https://github.com/praxis-proxy/conventions): the same
+machine-enforced quality standards used across the organization.
 
 - **Lints**: ~200 rustc/clippy/rustdoc lints at deny, including no unchecked
   arithmetic, no `as` casts, no `unwrap`/`panic`, exhaustive enum matching, and
@@ -25,7 +57,7 @@ verifiable against real code until the harness is extracted.
 - **Everything else**: markdown, TOML, shell, spelling, and workflow files are
   linted too
 
-## Quickstart
+## Development
 
 Install the [requirements](docs/development.md), then:
 
