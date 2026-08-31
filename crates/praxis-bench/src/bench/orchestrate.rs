@@ -98,3 +98,42 @@ fn resolve_output_path(explicit: Option<String>) -> String {
         format!("{dir}/benchmark-results-{ts}.yaml")
     })
 }
+
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser as _;
+
+    use super::*;
+
+    #[test]
+    fn resolve_praxis_image_returns_the_configured_image() {
+        let args = Args::parse_from(["praxis-bench", "--image", "ghcr.io/example/praxis:testtag"]);
+        assert_eq!(
+            resolve_praxis_image(&args),
+            "ghcr.io/example/praxis:testtag",
+            "the image under test must be the operator-supplied --image value"
+        );
+    }
+
+    #[test]
+    fn resolve_output_path_honours_explicit_value() {
+        assert_eq!(
+            resolve_output_path(Some("results/out.yaml".to_owned())),
+            "results/out.yaml",
+            "an explicit output path must be used verbatim"
+        );
+    }
+
+    #[test]
+    fn resolve_output_path_generates_default_when_absent() {
+        let path = resolve_output_path(None);
+        assert!(
+            path.ends_with(".yaml") && path.contains("benchmark-results-"),
+            "a generated path should be a timestamped yaml file, got {path}"
+        );
+    }
+}

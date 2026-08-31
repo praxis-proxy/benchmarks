@@ -1021,9 +1021,135 @@ mod tests {
         assert!(!results.is_stable(0.15), "wild swings should be unstable");
     }
 
+    #[test]
+    fn is_stable_requires_both_metrics_stable() {
+        // p99 is rock-steady but throughput swings wildly: the AND gate must
+        // report unstable. An OR mutant would call this stable.
+        let results = ScenarioResults {
+            scenario: "test".into(),
+            proxy: "praxis".into(),
+            runs: vec![
+                sample_result(0.010, 20_000.0),
+                sample_result(0.010, 5_000.0),
+                sample_result(0.010, 12_000.0),
+            ],
+            median: None,
+        };
+        assert!(
+            !results.is_stable(0.15),
+            "one unstable metric should make the scenario unstable"
+        );
+    }
+
+    #[test]
+    fn compare_p99_exactly_at_threshold_does_not_regress() {
+        // p99 change == threshold (not strictly greater), throughput well
+        // past the bar. `>` must exclude the boundary; `>=` would flag it.
+        let baseline = baseline_results(100.0, 100.0);
+        let current = current_results(105.0, 10.0);
+        let cmp = current.compare(&baseline, 0.05, None);
+        assert!(!cmp.regressed, "p99 change equal to the threshold must not regress");
+    }
+
+    #[test]
+    fn compare_throughput_exactly_at_threshold_does_not_regress() {
+        // throughput change == -threshold exactly; `<` must exclude the boundary.
+        let baseline = baseline_results(100.0, 100.0);
+        let current = current_results(200.0, 95.0);
+        let cmp = current.compare(&baseline, 0.05, None);
+        assert!(
+            !cmp.regressed,
+            "throughput drop equal to the threshold must not regress"
+        );
+    }
+
+    #[test]
+    fn compare_p99_improvement_exactly_at_threshold_not_improved() {
+        // p99 change == -threshold exactly; `<` must exclude the boundary.
+        let baseline = baseline_results(100.0, 100.0);
+        let current = current_results(95.0, 200.0);
+        let cmp = current.compare(&baseline, 0.05, None);
+        assert!(
+            !cmp.improved,
+            "latency drop equal to the threshold must not count as improved"
+        );
+    }
+
+    #[test]
+    fn compare_throughput_gain_only_not_improved() {
+        // Latency unchanged, throughput way up: improvement needs BOTH, so the
+        // `-threshold` sign matters (a dropped `-` would make p99 pass here).
+        let baseline = baseline_results(100.0, 100.0);
+        let current = current_results(100.0, 200.0);
+        let cmp = current.compare(&baseline, 0.05, None);
+        assert!(!cmp.improved, "throughput gain alone must not count as improved");
+    }
+
+    #[test]
+    fn compare_latency_improvement_only_not_improved() {
+        // p99 improves but throughput drops: the improvement AND gate must
+        // reject it. An OR mutant would flag it as improved.
+        let baseline = baseline_results(100.0, 100.0);
+        let current = current_results(50.0, 50.0);
+        let cmp = current.compare(&baseline, 0.05, None);
+        assert!(!cmp.improved, "isolated latency improvement must not count as improved");
+    }
+
+    #[test]
+    fn compare_throughput_gain_exactly_at_threshold_not_improved() {
+        // p99 improves past the bar but throughput gain == threshold exactly;
+        // `>` must exclude the boundary.
+        let baseline = baseline_results(100.0, 100.0);
+        let current = current_results(50.0, 105.0);
+        let cmp = current.compare(&baseline, 0.05, None);
+        assert!(
+            !cmp.improved,
+            "throughput gain equal to the threshold must not count as improved"
+        );
+    }
+
+    #[test]
+    fn u64_median_even_count_takes_upper_middle() {
+        // For a 4-element slice the median index is 4/2 = 2 (value 3). A `%`
+        // mutant would index 4%2 = 0 (value 1).
+        assert_eq!(
+            u64_median([1, 2, 3, 4].into_iter()),
+            3,
+            "even-count median uses index len/2"
+        );
+    }
+
+    #[test]
+    fn cv_near_zero_mean_returns_zero_not_infinity() {
+        // A dataset whose mean is exactly f64::EPSILON but whose spread is
+        // non-zero: the `< EPSILON` guard must NOT fire (mean is not below
+        // EPSILON), so a real CV is computed. `<=` or `==` mutants would fire
+        // the guard and short-circuit to 0.0 instead of ~1.0.
+        let cv = coefficient_of_variation(&[0.0, 2.0 * f64::EPSILON]);
+        assert!(
+            (cv - 1.0).abs() < 1e-9,
+            "mean exactly at EPSILON must compute a real CV, got {cv}"
+        );
+    }
+
     // ---------------------------------------------------------------------------
     // Test Utilities
     // ---------------------------------------------------------------------------
+
+    /// Baseline [`ScenarioResults`] with a median at the given p99/rps.
+    fn baseline_results(p99: f64, rps: f64) -> ScenarioResults {
+        ScenarioResults {
+            scenario: "test".into(),
+            proxy: "praxis".into(),
+            runs: vec![],
+            median: Some(sample_result(p99, rps)),
+        }
+    }
+
+    /// Current [`ScenarioResults`] with a median at the given p99/rps.
+    fn current_results(p99: f64, rps: f64) -> ScenarioResults {
+        baseline_results(p99, rps)
+    }
 
     /// Create a minimal [`BenchmarkResult`] for tests.
     fn sample_result(p99: f64, rps: f64) -> BenchmarkResult {

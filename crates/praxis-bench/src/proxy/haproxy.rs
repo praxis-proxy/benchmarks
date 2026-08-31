@@ -93,4 +93,36 @@ mod tests {
         assert_eq!(config.container_name(), Some("praxis-bench-haproxy"));
         assert_eq!(config.health_url(), None, "haproxy has no built-in health URL");
     }
+
+    #[test]
+    fn haproxy_start_command_runs_docker_with_defaults() {
+        let config = HaproxyConfig::default();
+        let (cmd, args) = config.start_command();
+
+        assert_eq!(cmd, "docker", "haproxy runs via docker");
+        assert!(args.contains(&"run".to_owned()), "must be a docker run");
+        assert!(args.contains(&"--name".to_owned()), "must name the container");
+        assert!(
+            args.contains(&"praxis-bench-haproxy".to_owned()),
+            "must pass the container name"
+        );
+        assert!(args.contains(&"--cpus=4.0".to_owned()), "must apply the CPU limit");
+        assert!(
+            args.contains(&"haproxy:latest".to_owned()),
+            "must fall back to the default haproxy image"
+        );
+    }
+
+    #[test]
+    fn haproxy_start_command_uses_image_override() {
+        let config = HaproxyConfig {
+            image: Some("myregistry/haproxy:test".into()),
+            ..Default::default()
+        };
+        let (_cmd, args) = config.start_command();
+        assert!(
+            args.contains(&"myregistry/haproxy:test".to_owned()),
+            "an image override must appear in the command"
+        );
+    }
 }

@@ -58,3 +58,51 @@ pub trait ProxyConfig: Send + Sync {
         None
     }
 }
+
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
+
+#[cfg(test)]
+#[expect(clippy::allow_attributes, reason = "blanket test suppressions")]
+#[allow(clippy::unwrap_used, reason = "tests")]
+mod tests {
+    use super::*;
+
+    /// A minimal [`ProxyConfig`] that relies on the trait's default
+    /// `health_url` and `container_name`, which no built-in proxy exercises.
+    struct DefaultedProxy;
+
+    impl ProxyConfig for DefaultedProxy {
+        fn name(&self) -> &str {
+            "defaulted"
+        }
+
+        fn listen_address(&self) -> &str {
+            "127.0.0.1:0"
+        }
+
+        fn start_command(&self) -> (String, Vec<String>) {
+            ("noop".into(), Vec::new())
+        }
+
+        fn config_path(&self) -> &Path {
+            Path::new("/dev/null")
+        }
+    }
+
+    #[test]
+    fn default_health_url_and_container_name_are_none() {
+        let proxy = DefaultedProxy;
+        assert_eq!(proxy.health_url(), None, "default health_url must be None");
+        assert_eq!(proxy.container_name(), None, "default container_name must be None");
+    }
+
+    #[test]
+    fn config_dir_is_non_empty() {
+        assert!(
+            !config_dir().as_os_str().is_empty(),
+            "config_dir must resolve to a non-empty path"
+        );
+    }
+}

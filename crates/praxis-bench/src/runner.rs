@@ -397,8 +397,40 @@ async fn run_ramp_steps(
 // -----------------------------------------------------------------------------
 
 #[cfg(test)]
+#[expect(clippy::allow_attributes, reason = "blanket test suppressions")]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "tests")]
 mod tests {
     use super::*;
+
+    /// Minimal fortio JSON accepted by [`fortio::parse`].
+    const FORTIO_JSON: &str = r#"{
+        "DurationHistogram": {"Percentiles": [], "Avg": 0.0, "Min": 0.0, "Max": 0.0, "Count": 0},
+        "ActualQPS": 1.0,
+        "ActualDuration": 1000000000.0
+    }"#;
+
+    /// Minimal vegeta JSON accepted by [`vegeta::parse`].
+    const VEGETA_JSON: &str = r#"{
+        "latencies": {"mean": 0, "50th": 0, "90th": 0, "95th": 0, "99th": 0, "max": 0, "min": 0},
+        "bytes_in": {"total": 0},
+        "bytes_out": {"total": 0},
+        "requests": 1,
+        "throughput": 1.0,
+        "duration": 1000000000,
+        "success": 1.0,
+        "errors": []
+    }"#;
+
+    fn runner_with(workload: Workload) -> Runner {
+        Runner::new(Scenario {
+            name: "s".into(),
+            workload,
+            warmup: Duration::ZERO,
+            duration: Duration::from_secs(1),
+            runs: 1,
+        })
+        .with_commit("test".into())
+    }
 
     #[test]
     fn runner_construction() {
@@ -417,5 +449,64 @@ mod tests {
         assert_eq!(runner.scenario.name, "test_scenario");
         assert_eq!(runner.backend_port, 19090);
         assert_eq!(runner.commit, "test123");
+    }
+
+    #[test]
+    fn parse_result_uses_fortio_for_tcp_workloads() {
+        // TCP and high-connection workloads must be parsed as fortio output.
+        // Deleting that match arm would route them through vegeta::parse.
+        for workload in [
+            Workload::TcpThroughput,
+            Workload::TcpConnectionRate,
+            Workload::HighConnectionCount { connections: 10 },
+        ] {
+            let runner = runner_with(workload);
+            let result = runner
+                .parse_result(FORTIO_JSON, "praxis")
+                .expect("fortio JSON should parse");
+            assert_eq!(result.tool, "fortio", "TCP-style workloads must parse as fortio");
+        }
+    }
+
+    #[test]
+    fn parse_result_uses_vegeta_for_http_workloads() {
+        let runner = runner_with(Workload::SmallRequests { concurrency: 1 });
+        let result = runner
+            .parse_result(VEGETA_JSON, "praxis")
+            .expect("vegeta JSON should parse");
+        assert_eq!(result.tool, "vegeta", "HTTP workloads must parse as vegeta");
+    }
+
+    #[tokio::test]
+    async fn run_ramp_errors_when_no_steps() {
+        // start_qps > end_qps yields an empty step range, which must be a
+        // hard error (code -1) before any load is generated.
+        let err = run_ramp("http://127.0.0.1:0/", 10, 5, 1, Duration::from_secs(1))
+            .await
+            .expect_err("an empty ramp range must error");
+        match err {
+            BenchmarkError::ToolFailed { code, tool, .. } => {
+                assert_eq!(code, -1, "empty ramp should report code -1");
+                assert_eq!(tool, "ramp", "empty ramp should tag the ramp tool");
+            },
+            other => panic!("expected ToolFailed, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn prepare_ramp_targets_divides_duration_across_steps() {
+        // 10 seconds across 5 steps = 2 seconds per step. A `%` or `*` mutant
+        // would yield 1s (10 % 5 -> max(1)) or 50s (10 * 5) instead.
+        let steps = [100_u32, 200, 300, 400, 500];
+        let (_tmpdir, target_path, step_duration) =
+            prepare_ramp_targets("http://127.0.0.1:0/", &steps, Duration::from_secs(10))
+                .await
+                .expect("target preparation should succeed");
+        assert_eq!(
+            step_duration,
+            Duration::from_secs(2),
+            "10s across 5 steps should be 2s per step"
+        );
+        assert!(target_path.exists(), "the vegeta target file should be written");
     }
 }

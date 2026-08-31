@@ -330,12 +330,11 @@ fn vegeta_throughput(report: &VegetaReport) -> crate::result::ThroughputMetrics 
     reason = "precision loss acceptable"
 )]
 fn vegeta_errors(report: &VegetaReport) -> crate::result::ErrorMetrics {
-    let non_2xx = if report.requests > 0 {
-        let success_count = (report.success * report.requests as f64).round() as u64;
-        report.requests.saturating_sub(success_count)
-    } else {
-        0
-    };
+    // No `requests > 0` guard: when requests is 0 the success count rounds to
+    // 0 and the saturating subtraction already yields 0, so the guard was a
+    // redundant branch (an equivalent mutant under mutation testing).
+    let success_count = (report.success * report.requests as f64).round() as u64;
+    let non_2xx = report.requests.saturating_sub(success_count);
     let timeouts = report
         .errors
         .iter()
@@ -569,6 +568,95 @@ mod tests {
             (result.throughput.bytes_per_sec - 0.0).abs() < 1e-9,
             "bytes_per_sec should be 0 when duration is 0, got {}",
             result.throughput.bytes_per_sec
+        );
+    }
+
+    #[test]
+    fn parse_zero_requests_reports_no_errors() {
+        // Exercises vegeta_errors with requests == 0 after the guard removal.
+        let json = r#"{
+            "latencies": {
+                "mean": 0, "50th": 0, "90th": 0, "95th": 0, "99th": 0, "max": 0, "min": 0
+            },
+            "bytes_in": {"total": 0},
+            "bytes_out": {"total": 0},
+            "requests": 0,
+            "throughput": 0.0,
+            "duration": 0,
+            "success": 0.0,
+            "errors": []
+        }"#;
+        let result = parse(json, "no-req", "praxis", "abc", false).expect("should parse");
+        assert_eq!(
+            result.errors.non_2xx,
+            Some(0),
+            "zero requests should yield zero non-2xx"
+        );
+    }
+
+    #[test]
+    fn map_vegeta_spawn_error_not_found() {
+        let err = map_vegeta_spawn_error(std::io::Error::new(std::io::ErrorKind::NotFound, "missing"));
+        assert!(
+            matches!(err, BenchmarkError::ToolNotFound(_)),
+            "a NotFound spawn error must map to ToolNotFound"
+        );
+    }
+
+    #[test]
+    fn map_vegeta_spawn_error_other_kind_is_io() {
+        let err = map_vegeta_spawn_error(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "nope"));
+        assert!(
+            matches!(err, BenchmarkError::Io(_)),
+            "a non-NotFound spawn error must map to Io"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_vegeta_output_ok_on_success() {
+        use std::os::unix::process::ExitStatusExt as _;
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        };
+        check_vegeta_output(&output).expect("a successful exit should return Ok");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_vegeta_output_signaled_reports_code_minus_one() {
+        use std::os::unix::process::ExitStatusExt as _;
+        // Raw wait-status 9 = killed by signal, so ExitStatus::code() is None
+        // and the -1 fallback must be reported.
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(9),
+            stdout: Vec::new(),
+            stderr: b"boom".to_vec(),
+        };
+        match check_vegeta_output(&output) {
+            Err(BenchmarkError::ToolFailed { code, .. }) => {
+                assert_eq!(code, -1, "a signaled exit should report code -1");
+            },
+            other => panic!("expected ToolFailed with code -1, got {other:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_vegeta_output_missing_binary_maps_to_not_found() {
+        use std::os::unix::process::ExitStatusExt as _;
+        // Failing status whose stderr mentions only "not found" must surface as
+        // ToolNotFound; an `&&` mutant (needing both substrings) would not.
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(256), // exit code 1
+            stdout: Vec::new(),
+            stderr: b"vegeta: command not found".to_vec(),
+        };
+        assert!(
+            matches!(check_vegeta_output(&output), Err(BenchmarkError::ToolNotFound(_))),
+            "stderr mentioning 'not found' should map to ToolNotFound"
         );
     }
 }

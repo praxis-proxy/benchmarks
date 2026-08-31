@@ -125,6 +125,8 @@ fn parse_workload(name: &str, args: &Args) -> Workload {
 #[expect(clippy::allow_attributes, reason = "blanket test suppressions")]
 #[allow(clippy::unwrap_used, reason = "tests")]
 mod tests {
+    use clap::Parser as _;
+
     use super::*;
 
     #[test]
@@ -162,5 +164,57 @@ mod tests {
     #[test]
     fn all_workloads_constant_has_expected_count() {
         assert_eq!(ALL_WORKLOADS.len(), 8, "ALL_WORKLOADS should have 8 entries");
+    }
+
+    #[test]
+    fn resolve_workloads_defaults_to_all() {
+        let args = Args::parse_from(["praxis-bench"]);
+        let workloads = resolve_workloads(&args);
+        assert_eq!(workloads.len(), 8, "an empty selection should expand to all workloads");
+        assert!(
+            workloads.iter().any(|w| w == "sustained"),
+            "the full set must include known workloads"
+        );
+    }
+
+    #[test]
+    fn resolve_workloads_uses_explicit_selection() {
+        let args = Args::parse_from(["praxis-bench", "--workload", "ramp"]);
+        assert_eq!(
+            resolve_workloads(&args),
+            vec!["ramp".to_owned()],
+            "an explicit selection must be used verbatim"
+        );
+    }
+
+    #[test]
+    fn build_scenarios_maps_names_to_scenarios() {
+        let args = Args::parse_from(["praxis-bench"]);
+        let scenarios = build_scenarios(&args, &["sustained".to_owned()]);
+        assert_eq!(scenarios.len(), 1, "one workload name should yield one scenario");
+        let scenario = &scenarios[0];
+        assert_eq!(scenario.name, "sustained", "scenario name must carry the workload name");
+        assert!(
+            matches!(scenario.workload, Workload::Sustained),
+            "the sustained name must map to the Sustained workload"
+        );
+        assert_eq!(
+            scenario.duration,
+            Duration::from_secs(60),
+            "sustained scenarios use the sustained_duration default (60s)"
+        );
+        assert_eq!(scenario.warmup, Duration::from_secs(5), "warmup default is 5s");
+        assert_eq!(scenario.runs, 1, "runs default is 1");
+    }
+
+    #[test]
+    fn build_scenarios_uses_measurement_duration_for_non_sustained() {
+        let args = Args::parse_from(["praxis-bench"]);
+        let scenarios = build_scenarios(&args, &["high-connection-count".to_owned()]);
+        assert_eq!(
+            scenarios[0].duration,
+            Duration::from_secs(15),
+            "non-sustained scenarios use the measurement duration default (15s)"
+        );
     }
 }

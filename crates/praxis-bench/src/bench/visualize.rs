@@ -367,3 +367,238 @@ fn shorten_scenario(name: &str) -> String {
         other => other.into(),
     }
 }
+
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
+
+#[cfg(test)]
+#[expect(clippy::allow_attributes, reason = "blanket test suppressions")]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::too_many_lines,
+    reason = "tests"
+)]
+mod tests {
+    use praxis_bench::result::{
+        BenchmarkResult, Environment, ErrorMetrics, LatencyMetrics, ResourceMetrics, ScenarioResults, ThroughputMetrics,
+    };
+
+    use super::*;
+
+    /// Build a [`BenchmarkResult`] with the given per-metric values.
+    fn result(scenario: &str, proxy: &str, latency: LatencyMetrics, throughput: ThroughputMetrics) -> BenchmarkResult {
+        BenchmarkResult {
+            commit: "c".into(),
+            timestamp: "t".into(),
+            scenario: scenario.into(),
+            proxy: proxy.into(),
+            tool: "vegeta".into(),
+            environment: Environment {
+                cpu: "x".into(),
+                os: "linux".into(),
+            },
+            latency,
+            throughput,
+            resource: None,
+            errors: ErrorMetrics {
+                non_2xx: Some(0),
+                timeouts: 0,
+                connect_failures: 0,
+            },
+            raw_report: None,
+        }
+    }
+
+    /// A [`ScenarioResults`] whose median has the given p99 latency.
+    fn scenario_with_p99(scenario: &str, proxy: &str, p99: f64) -> ScenarioResults {
+        let mut latency = LatencyMetrics::zeroed();
+        latency.p99 = p99;
+        ScenarioResults {
+            scenario: scenario.into(),
+            proxy: proxy.into(),
+            runs: Vec::new(),
+            median: Some(result(
+                scenario,
+                proxy,
+                latency,
+                ThroughputMetrics {
+                    requests_per_sec: 0.0,
+                    bytes_per_sec: 0.0,
+                },
+            )),
+        }
+    }
+
+    #[test]
+    fn chart_extractors_scale_each_metric() {
+        // Distinctive inputs so a `+`, `/`, `*` or `%` mutant in any extractor
+        // closure produces a value that fails its assertion.
+        let latency = LatencyMetrics {
+            min: 0.001,
+            max: 0.1,
+            mean: 0.01,
+            p50: 0.02,
+            p90: 0.03,
+            p95: 0.04,
+            p99: 0.05,
+            p99_9: 0.06,
+        };
+        let mut r = result(
+            "s",
+            "praxis",
+            latency,
+            ThroughputMetrics {
+                requests_per_sec: 1234.0,
+                bytes_per_sec: 2_000_000.0,
+            },
+        );
+        r.resource = Some(ResourceMetrics {
+            cpu_percent_avg: 42.0,
+            cpu_percent_peak: 99.0,
+            memory_rss_bytes_avg: 1_048_576,
+            memory_rss_bytes_peak: 3_145_728,
+        });
+
+        for chart in CHARTS {
+            let got = (chart.extract)(&r);
+            let expected = match chart.suffix {
+                "p99-latency" => 50.0,    // 0.05 * 1000
+                "throughput" => 1234.0,   // requests_per_sec
+                "min-latency" => 1.0,     // 0.001 * 1000
+                "mean-latency" => 10.0,   // 0.01 * 1000
+                "max-latency" => 100.0,   // 0.1 * 1000
+                "data-throughput" => 2.0, // 2_000_000 / 1_000_000
+                "cpu-avg" => 42.0,        // cpu_percent_avg
+                "memory-peak" => 3.0,     // 3_145_728 / 1_048_576
+                other => panic!("unexpected chart suffix: {other}"),
+            };
+            assert!(
+                (got - expected).abs() < 1e-9,
+                "chart {} should extract {expected}, got {got}",
+                chart.suffix
+            );
+        }
+    }
+
+    #[test]
+    fn unique_scenarios_dedupes_in_first_seen_order() {
+        let report = BenchmarkReport {
+            timestamp: "t".into(),
+            commit: "c".into(),
+            proxies: vec!["praxis".into()],
+            settings: std::collections::BTreeMap::new(),
+            results: vec![
+                scenario_with_p99("x", "praxis", 0.0),
+                scenario_with_p99("y", "praxis", 0.0),
+                scenario_with_p99("x", "envoy", 0.0),
+            ],
+            comparisons: Vec::new(),
+        };
+        assert_eq!(
+            unique_scenarios(&report),
+            vec!["x".to_owned(), "y".to_owned()],
+            "scenarios must be de-duplicated in first-seen order"
+        );
+    }
+
+    #[test]
+    fn extract_matrix_indexes_by_proxy_then_scenario() {
+        // 2x2 matrix: a mis-wired `find` (`||`/`!=` mutants) or a placeholder
+        // return would break exact per-cell values.
+        let report = BenchmarkReport {
+            timestamp: "t".into(),
+            commit: "c".into(),
+            proxies: vec!["praxis".into(), "envoy".into()],
+            settings: std::collections::BTreeMap::new(),
+            results: vec![
+                scenario_with_p99("a", "praxis", 1.0),
+                scenario_with_p99("b", "praxis", 2.0),
+                scenario_with_p99("a", "envoy", 3.0),
+                scenario_with_p99("b", "envoy", 4.0),
+            ],
+            comparisons: Vec::new(),
+        };
+        let scenarios = vec!["a".to_owned(), "b".to_owned()];
+        let matrix = extract_matrix(&report, &scenarios, |r| r.latency.p99);
+        assert_eq!(
+            matrix,
+            vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+            "cells must map [proxy][scenario]"
+        );
+    }
+
+    #[test]
+    fn extract_matrix_missing_cell_is_zero() {
+        let report = BenchmarkReport {
+            timestamp: "t".into(),
+            commit: "c".into(),
+            proxies: vec!["praxis".into()],
+            settings: std::collections::BTreeMap::new(),
+            results: vec![scenario_with_p99("a", "praxis", 1.0)],
+            comparisons: Vec::new(),
+        };
+        let scenarios = vec!["a".to_owned(), "missing".to_owned()];
+        let matrix = extract_matrix(&report, &scenarios, |r| r.latency.p99);
+        assert_eq!(matrix, vec![vec![1.0, 0.0]], "a missing scenario cell defaults to 0.0");
+    }
+
+    #[test]
+    fn proxy_color_maps_known_proxies() {
+        let rgb = |name| {
+            let c = proxy_color(name);
+            (c.0, c.1, c.2)
+        };
+        assert_eq!(rgb("praxis"), (76, 175, 80), "praxis colour");
+        assert_eq!(rgb("envoy"), (33, 150, 243), "envoy colour");
+        assert_eq!(rgb("nginx"), (244, 67, 54), "nginx colour");
+        assert_eq!(rgb("haproxy"), (156, 39, 176), "haproxy colour");
+        assert_eq!(rgb("unknown"), (158, 158, 158), "unknown proxies fall back to grey");
+    }
+
+    #[test]
+    fn shorten_scenario_maps_known_and_passes_through() {
+        assert_eq!(shorten_scenario("high-concurrency-small-requests"), "small-req");
+        assert_eq!(shorten_scenario("tcp-throughput"), "tcp-thru");
+        assert_eq!(
+            shorten_scenario("something-else"),
+            "something-else",
+            "unknown names pass through"
+        );
+    }
+
+    #[test]
+    fn run_writes_one_svg_per_chart() {
+        let dir = tempfile::tempdir().unwrap();
+        let report = BenchmarkReport {
+            timestamp: "t".into(),
+            commit: "c".into(),
+            proxies: vec!["praxis".into(), "envoy".into()],
+            settings: std::collections::BTreeMap::new(),
+            results: vec![
+                scenario_with_p99("high-concurrency-small-requests", "praxis", 0.01),
+                scenario_with_p99("high-concurrency-small-requests", "envoy", 0.02),
+            ],
+            comparisons: Vec::new(),
+        };
+        let report_path = dir.path().join("bench.yaml");
+        std::fs::write(&report_path, serde_yaml::to_string(&report).unwrap()).unwrap();
+        let out_dir = dir.path().join("charts");
+
+        let args = Args {
+            file: report_path.to_str().unwrap().to_owned(),
+            output: Some(out_dir.to_str().unwrap().to_owned()),
+        };
+        run(&args);
+
+        let svgs = std::fs::read_dir(&out_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "svg"))
+            .count();
+        assert_eq!(svgs, CHARTS.len(), "run must write one SVG per chart");
+    }
+}

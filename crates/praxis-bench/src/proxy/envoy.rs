@@ -98,4 +98,36 @@ mod tests {
         assert_eq!(config.container_name(), Some("praxis-bench-envoy"));
         assert_eq!(config.health_url(), None, "envoy has no built-in health URL");
     }
+
+    #[test]
+    fn envoy_start_command_runs_docker_with_defaults() {
+        let config = EnvoyConfig::default();
+        let (cmd, args) = config.start_command();
+
+        assert_eq!(cmd, "docker", "envoy runs via docker");
+        assert!(args.contains(&"run".to_owned()), "must be a docker run");
+        assert!(args.contains(&"--name".to_owned()), "must name the container");
+        assert!(
+            args.contains(&"praxis-bench-envoy".to_owned()),
+            "must pass the container name"
+        );
+        assert!(args.contains(&"--cpus=4.0".to_owned()), "must apply the CPU limit");
+        assert!(
+            args.contains(&"envoyproxy/envoy:v1.31-latest".to_owned()),
+            "must fall back to the default envoy image"
+        );
+    }
+
+    #[test]
+    fn envoy_start_command_uses_image_override() {
+        let config = EnvoyConfig {
+            image: Some("myregistry/envoy:test".into()),
+            ..Default::default()
+        };
+        let (_cmd, args) = config.start_command();
+        assert!(
+            args.contains(&"myregistry/envoy:test".to_owned()),
+            "an image override must appear in the command"
+        );
+    }
 }

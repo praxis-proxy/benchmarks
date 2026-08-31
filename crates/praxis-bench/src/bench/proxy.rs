@@ -38,3 +38,65 @@ pub(crate) fn build_proxy_config(name: &str, args: &Args, praxis_image: &str) ->
         },
     }
 }
+
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
+
+#[cfg(test)]
+#[expect(clippy::allow_attributes, reason = "blanket test suppressions")]
+#[allow(clippy::unwrap_used, reason = "tests")]
+mod tests {
+    use clap::Parser as _;
+
+    use super::*;
+
+    /// The image argument appears as the final element of the docker command.
+    fn image_arg(cfg: &dyn ProxyConfig) -> String {
+        cfg.start_command().1.last().cloned().unwrap_or_default()
+    }
+
+    #[test]
+    fn build_proxy_config_passes_envoy_image_override() {
+        let args = Args::parse_from(["praxis-bench", "--envoy-image", "custom/envoy:tag"]);
+        let cfg = build_proxy_config("envoy", &args, "praxis:img");
+        assert_eq!(
+            image_arg(cfg.as_ref()),
+            "custom/envoy:tag",
+            "the envoy image override must be threaded into the config"
+        );
+    }
+
+    #[test]
+    fn build_proxy_config_passes_nginx_image_override() {
+        let args = Args::parse_from(["praxis-bench", "--nginx-image", "custom/nginx:tag"]);
+        let cfg = build_proxy_config("nginx", &args, "praxis:img");
+        assert_eq!(
+            image_arg(cfg.as_ref()),
+            "custom/nginx:tag",
+            "the nginx image override must be threaded into the config"
+        );
+    }
+
+    #[test]
+    fn build_proxy_config_passes_haproxy_image_override() {
+        let args = Args::parse_from(["praxis-bench", "--haproxy-image", "custom/haproxy:tag"]);
+        let cfg = build_proxy_config("haproxy", &args, "praxis:img");
+        assert_eq!(
+            image_arg(cfg.as_ref()),
+            "custom/haproxy:tag",
+            "the haproxy image override must be threaded into the config"
+        );
+    }
+
+    #[test]
+    fn build_proxy_config_passes_praxis_image_under_test() {
+        let args = Args::parse_from(["praxis-bench"]);
+        let cfg = build_proxy_config("praxis", &args, "ghcr.io/example/praxis:testtag");
+        assert_eq!(
+            image_arg(cfg.as_ref()),
+            "ghcr.io/example/praxis:testtag",
+            "the praxis image under test must be threaded into the config"
+        );
+    }
+}

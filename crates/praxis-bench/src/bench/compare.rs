@@ -114,3 +114,154 @@ fn print_comparison_row(current: &ScenarioResults, baseline: &ScenarioResults, t
     );
     cmp.regressed
 }
+
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
+
+#[cfg(test)]
+#[expect(clippy::allow_attributes, reason = "blanket test suppressions")]
+#[allow(clippy::too_many_lines, clippy::indexing_slicing, reason = "tests")]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use praxis_bench::{
+        report::BenchmarkReport,
+        result::{BenchmarkResult, Environment, ErrorMetrics, LatencyMetrics, ThroughputMetrics},
+    };
+
+    use super::*;
+
+    /// A median [`BenchmarkResult`] fixed at the given p99/rps.
+    fn median(p99: f64, rps: f64) -> BenchmarkResult {
+        BenchmarkResult {
+            commit: "c".into(),
+            timestamp: "t".into(),
+            scenario: "s".into(),
+            proxy: "p".into(),
+            tool: "vegeta".into(),
+            environment: Environment {
+                cpu: "x".into(),
+                os: "linux".into(),
+            },
+            latency: LatencyMetrics {
+                min: 0.0,
+                max: 0.0,
+                mean: 0.0,
+                p50: 0.0,
+                p90: 0.0,
+                p95: 0.0,
+                p99,
+                p99_9: p99,
+            },
+            throughput: ThroughputMetrics {
+                requests_per_sec: rps,
+                bytes_per_sec: 0.0,
+            },
+            resource: None,
+            errors: ErrorMetrics {
+                non_2xx: Some(0),
+                timeouts: 0,
+                connect_failures: 0,
+            },
+            raw_report: None,
+        }
+    }
+
+    /// [`ScenarioResults`] with an empty (hence stable) run set and a median.
+    fn sr(scenario: &str, proxy: &str, p99: f64, rps: f64) -> ScenarioResults {
+        ScenarioResults {
+            scenario: scenario.into(),
+            proxy: proxy.into(),
+            runs: Vec::new(),
+            median: Some(median(p99, rps)),
+        }
+    }
+
+    fn report_with(results: Vec<ScenarioResults>) -> BenchmarkReport {
+        BenchmarkReport {
+            timestamp: "t".into(),
+            commit: "c".into(),
+            proxies: vec!["praxis".into()],
+            settings: BTreeMap::new(),
+            results,
+            comparisons: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn compute_comparisons_pairs_each_proxy_against_praxis() {
+        // The non-praxis result is listed first so a wrong baseline lookup
+        // (`||` / `!=` mutants) would grab envoy as its own baseline.
+        let results = vec![
+            sr("small", "envoy", 0.020, 5_000.0),
+            sr("small", "praxis", 0.010, 10_000.0),
+        ];
+        let proxy_names = vec!["praxis".to_owned(), "envoy".to_owned()];
+        let cmps = compute_comparisons(&results, &proxy_names, 0.05);
+        assert_eq!(cmps.len(), 1, "one envoy scenario yields one comparison");
+        assert_eq!(cmps[0].proxy, "envoy", "the comparison is for the non-praxis proxy");
+        assert_eq!(cmps[0].scenario, "small", "the comparison matches the scenario");
+        assert!(
+            (cmps[0].p99_latency_change - 1.0).abs() < 1e-9,
+            "envoy p99 is double the praxis baseline (100% change), got {}",
+            cmps[0].p99_latency_change
+        );
+    }
+
+    #[test]
+    fn compute_comparisons_empty_for_single_proxy() {
+        let results = vec![sr("small", "praxis", 0.010, 10_000.0)];
+        let cmps = compute_comparisons(&results, &["praxis".to_owned()], 0.05);
+        assert!(cmps.is_empty(), "a single proxy has nothing to compare against");
+    }
+
+    #[test]
+    fn print_comparison_row_flags_regression() {
+        let current = sr("s", "praxis", 0.020, 5_000.0);
+        let baseline = sr("s", "praxis", 0.010, 10_000.0);
+        assert!(
+            print_comparison_row(&current, &baseline, 0.05),
+            "doubled p99 with halved throughput must be a regression"
+        );
+    }
+
+    #[test]
+    fn print_comparison_row_passes_when_unchanged() {
+        let current = sr("s", "praxis", 0.010, 10_000.0);
+        let baseline = sr("s", "praxis", 0.010, 10_000.0);
+        assert!(
+            !print_comparison_row(&current, &baseline, 0.05),
+            "identical results must not be a regression"
+        );
+    }
+
+    #[test]
+    fn print_comparison_rows_flags_any_regression() {
+        // Scenario "a" improves, "b" regresses. The regression in "b" must be
+        // reported: `|=` accumulates it, `&=` would drop it, and a mismatched
+        // baseline lookup would compare "b" against the wrong row.
+        let current = report_with(vec![
+            sr("a", "praxis", 0.010, 10_000.0),
+            sr("b", "praxis", 0.020, 5_000.0),
+        ]);
+        let baseline = report_with(vec![
+            sr("a", "praxis", 0.020, 5_000.0),
+            sr("b", "praxis", 0.010, 10_000.0),
+        ]);
+        assert!(
+            print_comparison_rows(&current, &baseline, 0.05),
+            "a regression in any scenario must be reported"
+        );
+    }
+
+    #[test]
+    fn print_comparison_rows_all_pass_returns_false() {
+        let current = report_with(vec![sr("a", "praxis", 0.010, 10_000.0)]);
+        let baseline = report_with(vec![sr("a", "praxis", 0.010, 10_000.0)]);
+        assert!(
+            !print_comparison_rows(&current, &baseline, 0.05),
+            "no regressions must return false"
+        );
+    }
+}

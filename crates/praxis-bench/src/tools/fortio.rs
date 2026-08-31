@@ -506,6 +506,161 @@ mod tests {
         }
     }
 
+    #[test]
+    fn build_fortio_args_includes_core_flags_and_target() {
+        let config = FortioConfig {
+            target: "http://127.0.0.1:8080/".into(),
+            protocol: FortioProtocol::Http,
+            qps: 500,
+            duration: Duration::from_secs(30),
+            connections: 16,
+            no_catchup: true,
+            h2: false,
+        };
+        let args = build_fortio_args(&config);
+        assert_eq!(
+            args.first().map(String::as_str),
+            Some("load"),
+            "first arg should be `load`"
+        );
+        assert!(args.contains(&"-json".to_owned()), "must request JSON output");
+        assert!(args.contains(&"-qps".to_owned()), "must pass -qps");
+        assert!(args.contains(&"500".to_owned()), "must pass the configured qps value");
+        assert!(
+            args.contains(&"16".to_owned()),
+            "must pass the configured connection count"
+        );
+        assert!(args.contains(&"30s".to_owned()), "must pass the duration in seconds");
+        assert!(
+            args.contains(&"-nocatchup".to_owned()),
+            "no_catchup must add -nocatchup"
+        );
+        assert!(
+            !args.contains(&"-h2".to_owned()),
+            "h2 flag must be absent when disabled"
+        );
+        assert_eq!(
+            args.last().map(String::as_str),
+            Some("http://127.0.0.1:8080/"),
+            "the target must be the final argument"
+        );
+    }
+
+    #[test]
+    fn build_fortio_args_adds_h2_when_enabled() {
+        let config = FortioConfig {
+            target: "http://x/".into(),
+            protocol: FortioProtocol::Http,
+            qps: 0,
+            duration: Duration::from_secs(1),
+            connections: 1,
+            no_catchup: false,
+            h2: true,
+        };
+        let args = build_fortio_args(&config);
+        assert!(args.contains(&"-h2".to_owned()), "h2 must add the -h2 flag");
+        assert!(
+            !args.contains(&"-nocatchup".to_owned()),
+            "-nocatchup absent when disabled"
+        );
+    }
+
+    #[test]
+    fn resolve_fortio_target_http_passes_through() {
+        let config = FortioConfig {
+            target: "http://host:8080/path".into(),
+            protocol: FortioProtocol::Http,
+            qps: 0,
+            duration: Duration::from_secs(1),
+            connections: 1,
+            no_catchup: false,
+            h2: false,
+        };
+        assert_eq!(resolve_fortio_target(&config), "http://host:8080/path");
+    }
+
+    #[test]
+    fn resolve_fortio_target_tcp_adds_scheme() {
+        let config = FortioConfig {
+            target: "127.0.0.1:8080".into(),
+            protocol: FortioProtocol::Tcp,
+            qps: 0,
+            duration: Duration::from_secs(1),
+            connections: 1,
+            no_catchup: false,
+            h2: false,
+        };
+        assert_eq!(
+            resolve_fortio_target(&config),
+            "tcp://127.0.0.1:8080",
+            "a bare TCP address must gain the tcp:// scheme"
+        );
+    }
+
+    #[test]
+    fn resolve_fortio_target_tcp_keeps_existing_scheme() {
+        let config = FortioConfig {
+            target: "tcp://127.0.0.1:8080".into(),
+            protocol: FortioProtocol::Tcp,
+            qps: 0,
+            duration: Duration::from_secs(1),
+            connections: 1,
+            no_catchup: false,
+            h2: false,
+        };
+        assert_eq!(
+            resolve_fortio_target(&config),
+            "tcp://127.0.0.1:8080",
+            "an existing tcp:// scheme must not be doubled"
+        );
+    }
+
+    #[test]
+    fn fortio_throughput_divides_bytes_by_duration() {
+        // 200_000 bytes over 2 seconds = 100_000 B/s. A `*` mutant would give
+        // 400_000; the ActualQPS passes straight through as requests_per_sec.
+        let json = r#"{
+            "DurationHistogram": {"Percentiles": [], "Avg": 0.0, "Min": 0.0, "Max": 0.0, "Count": 0},
+            "ActualQPS": 4200.0,
+            "BytesSent": 100000,
+            "BytesReceived": 100000,
+            "ActualDuration": 2000000000.0
+        }"#;
+        let result = parse(json, "s", "praxis", "c", false).expect("should parse");
+        assert!(
+            (result.throughput.bytes_per_sec - 100_000.0).abs() < 1e-3,
+            "200_000 bytes / 2s should be 100_000 B/s, got {}",
+            result.throughput.bytes_per_sec
+        );
+        assert!(
+            (result.throughput.requests_per_sec - 4200.0).abs() < 1e-3,
+            "requests_per_sec should mirror ActualQPS"
+        );
+    }
+
+    #[test]
+    fn fortio_throughput_zero_duration_is_zero_not_infinite() {
+        // Zero duration with non-zero bytes must guard against divide-by-zero.
+        // A `>` -> `>=` mutant would divide by zero and yield a non-finite value.
+        let json = r#"{
+            "DurationHistogram": {"Percentiles": [], "Avg": 0.0, "Min": 0.0, "Max": 0.0, "Count": 0},
+            "ActualQPS": 0.0,
+            "BytesSent": 100000,
+            "BytesReceived": 100000,
+            "ActualDuration": 0.0
+        }"#;
+        let result = parse(json, "s", "praxis", "c", false).expect("should parse");
+        assert!(
+            result.throughput.bytes_per_sec.is_finite(),
+            "zero duration must not produce a non-finite throughput"
+        );
+        assert!(
+            (result.throughput.bytes_per_sec - 0.0).abs() < 1e-9,
+            "zero duration should yield 0 B/s, got {}",
+            result.throughput.bytes_per_sec
+        );
+    }
+
     // ---------------------------------------------------------------------------
     // Test Utilities
     // ---------------------------------------------------------------------------

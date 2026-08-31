@@ -43,3 +43,54 @@ pub(crate) fn write_report(report: &BenchmarkReport, path: &str, format: &str) {
         std::process::exit(1);
     });
 }
+
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    fn empty_report() -> BenchmarkReport {
+        BenchmarkReport {
+            timestamp: "2026-01-01T00:00:00Z".into(),
+            commit: "abc123".into(),
+            proxies: vec!["praxis".into()],
+            settings: BTreeMap::new(),
+            results: Vec::new(),
+            comparisons: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn write_report_json_emits_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.json");
+        write_report(&empty_report(), path.to_str().unwrap(), "json");
+        let content = std::fs::read_to_string(&path).expect("report file must be written");
+        assert!(
+            content.trim_start().starts_with('{'),
+            "json format must emit a JSON object"
+        );
+        assert!(
+            content.contains("\"commit\""),
+            "json must quote field names, got: {content}"
+        );
+    }
+
+    #[test]
+    fn write_report_yaml_emits_yaml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.yaml");
+        write_report(&empty_report(), path.to_str().unwrap(), "yaml");
+        let content = std::fs::read_to_string(&path).expect("report file must be written");
+        assert!(!content.trim_start().starts_with('{'), "yaml must not be a JSON object");
+        assert!(
+            content.contains("commit:"),
+            "yaml must use mapping keys, got: {content}"
+        );
+    }
+}
