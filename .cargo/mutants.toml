@@ -22,39 +22,39 @@ exclude_globs = ["**/src/main.rs"]
 # turns the poll into an infinite loop that can only ever be "caught" as a
 # timeout, which fails the mutation gate (exit code 3) rather than passing.
 exclude_re = [
-    # Deadline check whose only failure mode is a non-terminating poll loop.
-    "net\\.rs.*replace >= with < in wait_for_",
-    # External process spawning (docker / fortio / vegeta).
-    "net\\.rs.*\\bstop_container\\b",
-    "stats\\.rs.*DockerStatsCollector::start\\b",
-    "stats\\.rs.*DockerStatsCollector::stop\\b",
-    "stats\\.rs.*\\bpoll_loop\\b",
-    "stats\\.rs.*\\bpoll_once\\b",
-    "fortio\\.rs.*\\bstart_echo_server\\b",
-    "fortio\\.rs.*\\brun\\b",
-    "fortio\\.rs.*\\blookup_percentile\\b",
-    "vegeta\\.rs.*\\brun\\b",
-    "vegeta\\.rs.*\\brun_vegeta_pipeline\\b",
-    "vegeta\\.rs.*\\bvegeta_report\\b",
-    "runner\\.rs.*\\bRunner::run\\b",
-    "runner\\.rs.*\\bwait_for_proxy\\b",
-    "runner\\.rs.*\\bRunner::cleanup\\b",
-    "runner\\.rs.*\\brun_load\\b",
-    "runner\\.rs.*\\bdispatch_workload\\b",
-    "runner\\.rs.*\\brun_post_load\\b",
-    "runner\\.rs.*\\brun_ramp_steps\\b",
-    # Top-level runtime and orchestration wiring.
-    "/bench\\.rs.*\\brun\\b",
-    "orchestrate\\.rs.*\\brun_benchmarks\\b",
-    "orchestrate\\.rs.*\\brun_all_scenarios\\b",
-    # stdout-only helpers and CLI entry points.
-    "compare\\.rs.*\\brun_compare\\b",
-    "compare\\.rs.*\\bprint_comparison_header\\b",
-    # plotters SVG rendering (exercised end-to-end by the visualize::run test).
-    "visualize\\.rs.*\\brender_charts\\b",
-    "visualize\\.rs.*\\brender_panel\\b",
-    "visualize\\.rs.*\\bconfigure_mesh\\b",
-    "visualize\\.rs.*\\bdraw_bars\\b",
-    "visualize\\.rs.*\\bdraw_scenario_labels\\b",
-    "visualize\\.rs.*\\bdraw_legend\\b",
+  # Deadline check whose only failure mode is a non-terminating poll loop.
+  "net\\.rs.*replace >= with < in wait_for_",
+  # External process spawning (docker / fortio / vegeta).
+  "net\\.rs.*\\bstop_container\\b",
+  "stats\\.rs.*DockerStatsCollector::start\\b",
+  "stats\\.rs.*DockerStatsCollector::stop\\b",
+  "stats\\.rs.*\\bpoll_loop\\b",
+  "stats\\.rs.*\\bpoll_once\\b",
+  "fortio\\.rs.*\\bstart_echo_server\\b",
+  "fortio\\.rs.*\\brun\\b",
+  "fortio\\.rs.*\\blookup_percentile\\b",
+  "vegeta\\.rs.*\\brun\\b",
+  "vegeta\\.rs.*\\brun_vegeta_pipeline\\b",
+  "vegeta\\.rs.*\\bvegeta_report\\b",
+  "runner\\.rs.*\\bRunner::run\\b",
+  "runner\\.rs.*\\bwait_for_proxy\\b",
+  "runner\\.rs.*\\bRunner::cleanup\\b",
+  "runner\\.rs.*\\brun_load\\b",
+  "runner\\.rs.*\\bdispatch_workload\\b",
+  "runner\\.rs.*\\brun_post_load\\b",
+  "runner\\.rs.*\\brun_ramp_steps\\b",
+  # Top-level runtime and orchestration wiring.
+  "/bench\\.rs.*\\brun\\b",
+  "orchestrate\\.rs.*\\brun_benchmarks\\b",
+  "orchestrate\\.rs.*\\brun_all_scenarios\\b",
+  # stdout-only helpers and CLI entry points.
+  "compare\\.rs.*\\brun_compare\\b",
+  "compare\\.rs.*\\bprint_comparison_header\\b",
+  # plotters SVG rendering (exercised end-to-end by the visualize::run test).
+  "visualize\\.rs.*\\brender_charts\\b",
+  "visualize\\.rs.*\\brender_panel\\b",
+  "visualize\\.rs.*\\bconfigure_mesh\\b",
+  "visualize\\.rs.*\\bdraw_bars\\b",
+  "visualize\\.rs.*\\bdraw_scenario_labels\\b",
+  "visualize\\.rs.*\\bdraw_legend\\b",
 ]

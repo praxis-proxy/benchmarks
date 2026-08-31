@@ -507,7 +507,7 @@ mod tests {
 
     #[test]
     fn extract_matrix_indexes_by_proxy_then_scenario() {
-        // 2x2 matrix: a mis-wired `find` (`||`/`!=` mutants) or a placeholder
+        // 2x2 matrix: a miswired `find` (`||`/`!=` mutants) or a placeholder
         // return would break exact per-cell values.
         let report = BenchmarkReport {
             timestamp: "t".into(),
