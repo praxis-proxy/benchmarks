@@ -19,20 +19,16 @@ runs:
       with:
         toolchain: ${{ inputs.rust-version }}
 
-    - name: Cache cargo binaries
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ~/.cargo/bin
-        key: ${{ runner.os }}-cargo-bin-audit-deny
-
     - name: Install cargo-audit
-      run: command -v cargo-audit || cargo install cargo-audit --locked
-      shell: bash
+      uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # v2.87.15
+      with:
+        tool: cargo-audit
 
     - name: Install cargo-deny
       if: inputs.run-deny == 'true'
-      run: command -v cargo-deny || cargo install cargo-deny --locked
-      shell: bash
+      uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # v2.87.15
+      with:
+        tool: cargo-deny
 
     - name: Run cargo audit
       run: cargo audit

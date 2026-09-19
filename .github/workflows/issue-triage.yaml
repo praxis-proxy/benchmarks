@@ -3,21 +3,54 @@ name: Issue Triage
 # ------------------------------------------------------------------------------
 # Workflow Settings
 # ------------------------------------------------------------------------------
+#
+# Enforces that only maintainers triage issues. A new issue is flagged
+# `triage/needs-triage`. An issue is triaged only once a maintainer gives it a
+# milestone AND adds it to a project board; adding either one does not, on its
+# own, triage the issue.
+#
+# When a non-maintainer self-assigns or otherwise moves an un-triaged issue
+# (adds a milestone or a project), the issue is reset: every assignee, its
+# milestone, and every project board are removed, `triage/needs-triage` is
+# re-applied, and a comment explains that a maintainer must triage the issue
+# before it can be assigned or prioritized.
+#
+# Once triaged, contributors may self-assign non-urgent work. Urgent and
+# high-priority issues stay maintainer-assigned even after triage.
+#
+# Members of any team in MAINTAINER_TEAMS bypass the gate entirely. The `devs`
+# team is intentionally NOT a maintainer team: developers are contributors here,
+# so add every other reviewing/leadership team to MAINTAINER_TEAMS instead.
+#
+# Everything runs through the GitHub API only; no code is checked out.
+#
+# The praxis-bot GitHub App token needs these permissions for this to work:
+#   - Repository "Issues": read & write   (label, unassign, milestone, comment)
+#   - Organization "Members": read        (team membership lookups)
+#   - Organization/Repository "Projects": read & write (read board membership
+#                                          and remove the issue from boards)
+# Priority is read via the org-level Issue Fields API (GA July 2026), so the
+# app installation must be able to read issue field values.
 
 on:
   issues:
-    types: [opened, milestoned, demilestoned]
+    types: [opened, assigned, milestoned]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
 
 permissions: {}
 
 jobs:
   # ----------------------------------------------------------------------------
-  # Triage Labels
+  # Triage Enforcement
   # ----------------------------------------------------------------------------
 
   triage:
     if: ${{ !github.event.issue.pull_request }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       issues: write
     steps:
@@ -27,8 +60,9 @@ jobs:
         with:
           app-id: ${{ secrets.PRAXIS_BOT_APP_ID }}
           private-key: ${{ secrets.PRAXIS_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
 
-      - name: Add triage/needs-triage on new issue
+      - name: Flag new issues for triage
         if: github.event.action == 'opened' && !github.event.issue.milestone
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -38,24 +72,155 @@ jobs:
           gh issue edit "$ISSUE" --repo "$GH_REPO" \
             --add-label "triage/needs-triage"
 
-      - name: Accept triaged issue
-        if: github.event.action == 'milestoned'
+      - name: Enforce triage policy
+        if: github.event.action == 'assigned' || github.event.action == 'milestoned'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
+          ORG: ${{ github.repository_owner }}
           ISSUE: ${{ github.event.issue.number }}
+          GH_EVENT_ACTION: ${{ github.event.action }}
+          ASSIGNEE: ${{ github.event.assignee.login }}
+          ACTOR: ${{ github.event.sender.login }}
+          # Teams whose members may triage and assign urgent/high or un-triaged
+          # work. Comma-separated slugs. `devs` is deliberately excluded.
+          MAINTAINER_TEAMS: "maintainers"
+          # Native issue field that holds priority, and the option values that
+          # only maintainers may hand out. Matched case-insensitively; add any
+          # other top-tier names your org uses (e.g. Critical, P0).
+          PRIORITY_FIELD_NAME: "Priority"
+          BLOCKED_PRIORITIES: "Urgent,High"
         run: |
-          gh issue edit "$ISSUE" --repo "$GH_REPO" \
-            --remove-label "triage/needs-triage" \
-            --add-label "triage/accepted"
+          set -euo pipefail
 
-      - name: Revert to needs-triage on demilestone
-        if: github.event.action == 'demilestoned'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          ISSUE: ${{ github.event.issue.number }}
-        run: |
-          gh issue edit "$ISSUE" --repo "$GH_REPO" \
-            --remove-label "triage/accepted" \
-            --add-label "triage/needs-triage"
+          repo_name="${GH_REPO#*/}"
+
+          # --------------------------------------------------------------------
+          # Maintainers may triage, assign, and move issues freely.
+          # --------------------------------------------------------------------
+          IFS=',' read -ra teams <<< "$MAINTAINER_TEAMS"
+          for team in "${teams[@]}"; do
+            slug="$(echo "$team" | xargs)"
+            [ -z "$slug" ] && continue
+            state="$(gh api "/orgs/${ORG}/teams/${slug}/memberships/${ACTOR}" \
+              --jq '.state' 2>/dev/null || true)"
+            if [ "$state" = "active" ]; then
+              echo "::notice::${ACTOR} is on maintainer team '${slug}': allowed"
+              exit 0
+            fi
+          done
+
+          # --------------------------------------------------------------------
+          # Helpers
+          # --------------------------------------------------------------------
+          comment_once() {
+            marker="$1"
+            body="$2"
+            already="$(gh api "repos/${GH_REPO}/issues/${ISSUE}/comments" \
+              --jq "[.[] | select(.body | contains(\"${marker}\"))] | length")"
+            if [ "$already" -eq 0 ]; then
+              gh issue comment "$ISSUE" --repo "$GH_REPO" \
+                --body "${marker}"$'\n'"${body}"
+            fi
+          }
+
+          reset_untriaged() {
+            echo "::warning::resetting un-triaged issue ${ISSUE} (moved by ${ACTOR})"
+
+            # Remove every assignee.
+            csv=""
+            while IFS= read -r login; do
+              [ -z "$login" ] && continue
+              csv="${csv:+$csv,}$login"
+            done <<< "$(echo "$issue_json" | jq -r '.assignees[].login')"
+            if [ -n "$csv" ]; then
+              gh issue edit "$ISSUE" --repo "$GH_REPO" --remove-assignee "$csv" || true
+            fi
+
+            # Remove the milestone.
+            gh issue edit "$ISSUE" --repo "$GH_REPO" --remove-milestone || true
+
+            # Remove the issue from every project board.
+            # $owner/$repo/$num are GraphQL variables bound by the -F flags, so
+            # the query stays single-quoted (SC2016 misfires on gh's -f).
+            # shellcheck disable=SC2016
+            projects="$(gh api graphql \
+              -f query='query($owner:String!,$repo:String!,$num:Int!){repository(owner:$owner,name:$repo){issue(number:$num){projectItems(first:50){nodes{project{title}}}}}}' \
+              -F owner="$ORG" -F repo="$repo_name" -F num="$ISSUE" \
+              --jq '.data.repository.issue.projectItems.nodes[].project.title' 2>/dev/null || true)"
+            while IFS= read -r title; do
+              [ -z "$title" ] && continue
+              gh issue edit "$ISSUE" --repo "$GH_REPO" --remove-project "$title" || true
+            done <<< "$projects"
+
+            # Flag for (re-)triage.
+            gh issue edit "$ISSUE" --repo "$GH_REPO" --add-label "triage/needs-triage" || true
+            gh issue edit "$ISSUE" --repo "$GH_REPO" --remove-label "triage/accepted" || true
+
+            comment_once "<!-- conventions:issue-triage:reset -->" \
+          "Sorry @${ACTOR}, this issue hasn't been triaged yet, so I've reset it: I removed any assignees, its milestone, and any project boards. Only a maintainer can triage an issue (give it a milestone and add it to a project board), and it must be triaged before it can be assigned or prioritized. Once triaged, contributors can self-assign non-urgent work. See the [self-assignment policy](docs/development.md#picking-up-work)."
+          }
+
+          # --------------------------------------------------------------------
+          # Read the issue. Bail out (never reset) if we can't read it, so a
+          # transient API error never strips a legitimately triaged issue.
+          # --------------------------------------------------------------------
+          issue_json="$(gh api "repos/${GH_REPO}/issues/${ISSUE}" 2>/dev/null || true)"
+          if [ -z "$issue_json" ]; then
+            echo "::warning::could not fetch issue ${ISSUE}; leaving it untouched"
+            exit 0
+          fi
+
+          milestone="$(echo "$issue_json" | jq -r '.milestone.number // empty')"
+
+          # Fail open on the project lookup: assume a board is present so an API
+          # error can't misread a triaged issue as un-triaged.
+          # shellcheck disable=SC2016
+          project_count="$(gh api graphql \
+            -f query='query($owner:String!,$repo:String!,$num:Int!){repository(owner:$owner,name:$repo){issue(number:$num){projectItems(first:1){totalCount}}}}' \
+            -F owner="$ORG" -F repo="$repo_name" -F num="$ISSUE" \
+            --jq '.data.repository.issue.projectItems.totalCount' 2>/dev/null || echo 1)"
+          case "$project_count" in
+            ''|*[!0-9]*) project_count=1 ;;
+          esac
+
+          # --------------------------------------------------------------------
+          # Un-triaged issues (no milestone or no board) get fully reset,
+          # whoever moved or self-assigned them.
+          # --------------------------------------------------------------------
+          if [ -z "$milestone" ] || [ "$project_count" -eq 0 ]; then
+            echo "::warning::${ISSUE} is not triaged (milestone='${milestone}', projectItems=${project_count})"
+            reset_untriaged
+            exit 0
+          fi
+
+          # --------------------------------------------------------------------
+          # The issue is triaged. From here only assignments are gated: urgent
+          # and high-priority work is maintainer-assigned only.
+          # --------------------------------------------------------------------
+          if [ "$GH_EVENT_ACTION" != "assigned" ]; then
+            echo "::notice::${ISSUE} is triaged; nothing to enforce for '${GH_EVENT_ACTION}'"
+            exit 0
+          fi
+
+          values="$(gh api "repos/${GH_REPO}/issues/${ISSUE}/issue-field-values" \
+            -H "X-GitHub-Api-Version: 2026-03-10" 2>/dev/null || echo '[]')"
+          priority="$(echo "$values" | jq -r --arg name "$PRIORITY_FIELD_NAME" \
+            '.[] | select(.issue_field_name == $name) | .single_select_option.name // empty')"
+
+          lc_priority="$(echo "$priority" | tr '[:upper:]' '[:lower:]')"
+          if [ -n "$lc_priority" ]; then
+            IFS=',' read -ra blocked <<< "$BLOCKED_PRIORITIES"
+            for level in "${blocked[@]}"; do
+              lc_level="$(echo "$level" | xargs | tr '[:upper:]' '[:lower:]')"
+              if [ "$lc_priority" = "$lc_level" ]; then
+                echo "::warning::${ISSUE} is ${priority} priority: reverting self-assignment by ${ACTOR}"
+                gh issue edit "$ISSUE" --repo "$GH_REPO" --remove-assignee "$ASSIGNEE" || true
+                comment_once "<!-- conventions:issue-triage:priority -->" \
+          "Sorry @${ASSIGNEE}, this issue is marked **${priority}** priority. Urgent and high-priority work is assigned by a maintainer after triage, so I've unassigned it. Please ask a maintainer to assign it, or pick up a triaged \`medium\`/\`low\` priority issue instead. See the [self-assignment policy](docs/development.md#picking-up-work)."
+                exit 0
+              fi
+            done
+          fi
+
+          echo "::notice::${ISSUE} is triaged and not high priority: assignment to ${ASSIGNEE} allowed"

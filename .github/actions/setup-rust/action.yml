@@ -37,15 +37,9 @@ runs:
         components: ${{ inputs.components }}
 
     - name: Cache Cargo registry and build artifacts
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
-        path: |
-          ~/.cargo/registry/index
-          ~/.cargo/registry/cache
-          ~/.cargo/git/db
-          ${{ inputs.cache-target == 'true' && 'target' || '' }}
-          ${{ inputs.extra-cache-paths }}
-        key: ${{ runner.os }}-rust-${{ inputs.rust-version }}-${{ inputs.cache-suffix }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-rust-${{ inputs.rust-version }}-${{ inputs.cache-suffix }}-
-        save-always: ${{ inputs.save-always }}
+        shared-key: ${{ inputs.cache-suffix }}
+        cache-targets: ${{ inputs.cache-target }}
+        cache-directories: ${{ inputs.extra-cache-paths }}
+        cache-on-failure: ${{ inputs.save-always }}
