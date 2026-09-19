@@ -46,7 +46,7 @@ struct StatsSample {
 /// and compute aggregate metrics.
 ///
 /// ```
-/// use praxis_bench::stats::DockerStatsCollector;
+/// use praxis_proxy_benchmarks::stats::DockerStatsCollector;
 ///
 /// let collector = DockerStatsCollector::new("my-container");
 /// assert_eq!(collector.container_name(), "my-container");
@@ -174,14 +174,14 @@ fn parse_stats_line(line: &str) -> Option<StatsSample> {
 /// Parse CPU percentage from a string like `"45.23%"`.
 ///
 /// ```
-/// use praxis_bench::stats::parse_cpu_percent;
+/// use praxis_proxy_benchmarks::stats::parse_cpu_percent;
 ///
 /// assert!((parse_cpu_percent("45.23%").unwrap() - 45.23).abs() < 0.001);
 /// assert!((parse_cpu_percent("0.00%").unwrap()).abs() < 0.001);
 /// assert!(parse_cpu_percent("bad").is_none());
 /// ```
-pub fn parse_cpu_percent(s: &str) -> Option<f64> {
-    s.strip_suffix('%')?.trim().parse::<f64>().ok()
+pub fn parse_cpu_percent(input: &str) -> Option<f64> {
+    input.strip_suffix('%')?.trim().parse::<f64>().ok()
 }
 
 /// Parse memory usage from a string like `"128.5MiB / 2GiB"`.
@@ -190,29 +190,29 @@ pub fn parse_cpu_percent(s: &str) -> Option<f64> {
 /// bytes based on the unit suffix (`B`, `KiB`, `MiB`, `GiB`).
 ///
 /// ```
-/// use praxis_bench::stats::parse_memory_bytes;
+/// use praxis_proxy_benchmarks::stats::parse_memory_bytes;
 ///
 /// assert_eq!(parse_memory_bytes("128.5MiB / 2GiB").unwrap(), 134_742_016);
 /// assert_eq!(parse_memory_bytes("1GiB / 4GiB").unwrap(), 1_073_741_824);
 /// assert_eq!(parse_memory_bytes("512KiB / 1GiB").unwrap(), 524_288);
 /// assert_eq!(parse_memory_bytes("1024B / 2GiB").unwrap(), 1024);
 /// ```
-pub fn parse_memory_bytes(s: &str) -> Option<u64> {
-    let usage = s.split(" / ").next()?.trim();
+pub fn parse_memory_bytes(input: &str) -> Option<u64> {
+    let usage = input.split(" / ").next()?.trim();
     parse_byte_value(usage)
 }
 
 /// Parse a value with a byte-unit suffix into raw bytes.
 ///
 /// Supports `B`, `KiB`, `MiB`, `GiB`.
-fn parse_byte_value(s: &str) -> Option<u64> {
-    let (num_str, multiplier) = if let Some(n) = s.strip_suffix("GiB") {
+fn parse_byte_value(input: &str) -> Option<u64> {
+    let (num_str, multiplier) = if let Some(n) = input.strip_suffix("GiB") {
         (n, 1_073_741_824_u64)
-    } else if let Some(n) = s.strip_suffix("MiB") {
+    } else if let Some(n) = input.strip_suffix("MiB") {
         (n, 1_048_576_u64)
-    } else if let Some(n) = s.strip_suffix("KiB") {
+    } else if let Some(n) = input.strip_suffix("KiB") {
         (n, 1_024_u64)
-    } else if let Some(n) = s.strip_suffix('B') {
+    } else if let Some(n) = input.strip_suffix('B') {
         (n, 1_u64)
     } else {
         return None;
@@ -221,6 +221,7 @@ fn parse_byte_value(s: &str) -> Option<u64> {
     let value: f64 = num_str.trim().parse().ok()?;
 
     #[expect(
+        clippy::as_conversions,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         clippy::cast_precision_loss,
@@ -234,7 +235,11 @@ fn parse_byte_value(s: &str) -> Option<u64> {
 // -----------------------------------------------------------------------------
 
 /// Compute aggregate [`ResourceMetrics`] from collected samples.
-#[expect(clippy::cast_precision_loss, reason = "sample counts and byte sums are small enough")]
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "sample counts and byte sums are small enough"
+)]
 fn compute_metrics(samples: &[StatsSample]) -> Option<ResourceMetrics> {
     if samples.is_empty() {
         warn!("no docker stats samples collected");
@@ -264,21 +269,25 @@ fn compute_metrics(samples: &[StatsSample]) -> Option<ResourceMetrics> {
 
 /// Compute average and peak CPU from samples.
 fn cpu_aggregates(samples: &[StatsSample], count: f64) -> (f64, f64) {
-    let sum: f64 = samples.iter().map(|s| s.cpu_percent).sum();
-    let peak = samples.iter().map(|s| s.cpu_percent).fold(f64::NEG_INFINITY, f64::max);
+    let sum: f64 = samples.iter().map(|sample| sample.cpu_percent).sum();
+    let peak = samples
+        .iter()
+        .map(|sample| sample.cpu_percent)
+        .fold(f64::NEG_INFINITY, f64::max);
     (sum / count, peak)
 }
 
 /// Compute average and peak memory from samples.
 #[expect(
+    clippy::as_conversions,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
     reason = "memory sums are small enough for f64; result fits u64"
 )]
 fn mem_aggregates(samples: &[StatsSample], count: f64) -> (u64, u64) {
-    let sum: u64 = samples.iter().map(|s| s.memory_bytes).sum();
-    let peak = samples.iter().map(|s| s.memory_bytes).max().unwrap_or(0);
+    let sum: u64 = samples.iter().map(|sample| sample.memory_bytes).sum();
+    let peak = samples.iter().map(|sample| sample.memory_bytes).max().unwrap_or(0);
     ((sum as f64 / count) as u64, peak)
 }
 
@@ -427,20 +436,23 @@ mod tests {
             cpu_percent: 50.0,
             memory_bytes: 1_048_576,
         }];
-        let m = compute_metrics(&samples).unwrap();
+        let metrics = compute_metrics(&samples).unwrap();
         assert!(
-            (m.cpu_percent_avg - 50.0).abs() < 0.001,
+            (metrics.cpu_percent_avg - 50.0).abs() < 0.001,
             "avg should equal single sample, got {}",
-            m.cpu_percent_avg
+            metrics.cpu_percent_avg
         );
         assert!(
-            (m.cpu_percent_peak - 50.0).abs() < 0.001,
+            (metrics.cpu_percent_peak - 50.0).abs() < 0.001,
             "peak should equal single sample, got {}",
-            m.cpu_percent_peak
+            metrics.cpu_percent_peak
         );
-        assert_eq!(m.memory_rss_bytes_avg, 1_048_576, "avg mem should match single sample");
         assert_eq!(
-            m.memory_rss_bytes_peak, 1_048_576,
+            metrics.memory_rss_bytes_avg, 1_048_576,
+            "avg mem should match single sample"
+        );
+        assert_eq!(
+            metrics.memory_rss_bytes_peak, 1_048_576,
             "peak mem should match single sample"
         );
     }
@@ -461,32 +473,35 @@ mod tests {
                 memory_bytes: 300,
             },
         ];
-        let m = compute_metrics(&samples).unwrap();
+        let metrics = compute_metrics(&samples).unwrap();
         assert!(
-            (m.cpu_percent_avg - 40.0).abs() < 0.001,
+            (metrics.cpu_percent_avg - 40.0).abs() < 0.001,
             "cpu avg of 20/40/60 should be 40.0, got {}",
-            m.cpu_percent_avg
+            metrics.cpu_percent_avg
         );
         assert!(
-            (m.cpu_percent_peak - 60.0).abs() < 0.001,
+            (metrics.cpu_percent_peak - 60.0).abs() < 0.001,
             "cpu peak should be 60.0, got {}",
-            m.cpu_percent_peak
+            metrics.cpu_percent_peak
         );
-        assert_eq!(m.memory_rss_bytes_avg, 200, "mem avg of 100/200/300 should be 200");
-        assert_eq!(m.memory_rss_bytes_peak, 300, "mem peak should be 300");
+        assert_eq!(
+            metrics.memory_rss_bytes_avg, 200,
+            "mem avg of 100/200/300 should be 200"
+        );
+        assert_eq!(metrics.memory_rss_bytes_peak, 300, "mem peak should be 300");
     }
 
     #[test]
     fn collector_new() {
-        let c = DockerStatsCollector::new("test-container");
-        assert_eq!(c.container_name(), "test-container");
-        assert!(c.handle.is_none(), "handle should be None before start");
+        let collector = DockerStatsCollector::new("test-container");
+        assert_eq!(collector.container_name(), "test-container");
+        assert!(collector.handle.is_none(), "handle should be None before start");
     }
 
     #[tokio::test]
     async fn collector_stop_without_start() {
-        let c = DockerStatsCollector::new("nonexistent");
-        let result = c.stop().await;
+        let collector = DockerStatsCollector::new("nonexistent");
+        let result = collector.stop().await;
         assert!(result.is_none(), "stop without start should return None");
     }
 

@@ -15,7 +15,7 @@ source.
 Run the CLI directly:
 
 ```console
-cargo run -p praxis-bench -- --image ghcr.io/praxis-proxy/praxis:latest
+cargo run -p praxis-proxy-benchmarks -- --image ghcr.io/praxis-proxy/praxis:latest
 ```
 
 Or use the container runner, which bundles the `docker` CLI and the

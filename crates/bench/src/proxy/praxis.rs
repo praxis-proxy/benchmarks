@@ -15,7 +15,7 @@ use super::ProxyConfig;
 /// build can be benchmarked without this tool depending on its source.
 ///
 /// ```
-/// use praxis_bench::proxy::{PraxisConfig, ProxyConfig};
+/// use praxis_proxy_benchmarks::proxy::{PraxisConfig, ProxyConfig};
 ///
 /// let cfg = PraxisConfig::new("ghcr.io/praxis-proxy/praxis:latest".into());
 /// assert_eq!(cfg.name(), "praxis");

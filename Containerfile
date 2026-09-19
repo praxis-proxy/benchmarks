@@ -20,15 +20,15 @@ WORKDIR /src
 # See: https://shaneutt.com/blog/rust-fast-small-docker-image-builds/
 
 COPY Cargo.toml Cargo.lock ./
-COPY crates/praxis-bench/Cargo.toml crates/praxis-bench/Cargo.toml
+COPY crates/bench/Cargo.toml crates/bench/Cargo.toml
 
-RUN mkdir -p crates/praxis-bench/src \
-    && echo '//! stub' > crates/praxis-bench/src/lib.rs \
-    && printf '//! stub\nfn main() {}\n' > crates/praxis-bench/src/main.rs
+RUN mkdir -p crates/bench/src \
+    && echo '//! stub' > crates/bench/src/lib.rs \
+    && printf '//! stub\nfn main() {}\n' > crates/bench/src/main.rs
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release -p praxis-bench
+    cargo build --release -p praxis-proxy-benchmarks
 
 # ------------------------------------------------------------------------------
 # Cache Tricks
@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # Replace stubs with real source, then rebuild. Only the
 # project crates recompile; all dependencies are cached.
 
-COPY crates/praxis-bench/src crates/praxis-bench/src
+COPY crates/bench/src crates/bench/src
 
 # Touch the source files so cargo sees them as newer than
 # the cached stub artifacts.
@@ -49,7 +49,7 @@ RUN find crates -name '*.rs' -exec touch {} +
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release -p praxis-bench \
+    cargo build --release -p praxis-proxy-benchmarks \
     && cp target/release/praxis-bench /usr/local/bin/praxis-bench
 
 # ------------------------------------------------------------------------------
@@ -96,7 +96,7 @@ RUN set -eux; \
 
 # Bundle the built-in comparison configs and point the resolver at them so
 # the runner works without the source tree mounted.
-COPY crates/praxis-bench/comparison /opt/praxis-bench/comparison
+COPY crates/bench/comparison /opt/praxis-bench/comparison
 ENV PRAXIS_BENCH_CONFIG_DIR=/opt/praxis-bench/comparison/configs
 
 COPY --from=builder --chown=root:root --chmod=0555 \

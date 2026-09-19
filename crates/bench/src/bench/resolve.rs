@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use praxis_bench::scenario::{Scenario, Workload};
+use praxis_proxy_benchmarks::scenario::{Scenario, Workload};
 
 use super::cli::Args;
 
@@ -57,7 +57,7 @@ pub(crate) fn resolve_workloads(args: &Args) -> Vec<String> {
 
 /// Build [`Scenario`] list from CLI args and workload names.
 ///
-/// [`Scenario`]: praxis_bench::scenario::Scenario
+/// [`Scenario`]: praxis_proxy_benchmarks::scenario::Scenario
 pub(crate) fn build_scenarios(args: &Args, workload_names: &[String]) -> Vec<Scenario> {
     workload_names
         .iter()
@@ -83,7 +83,7 @@ pub(crate) fn build_scenarios(args: &Args, workload_names: &[String]) -> Vec<Sce
 ///
 /// Exits the process if the name is unknown.
 ///
-/// [`Workload`]: praxis_bench::scenario::Workload
+/// [`Workload`]: praxis_proxy_benchmarks::scenario::Workload
 fn parse_workload(name: &str, args: &Args) -> Workload {
     match name {
         "high-concurrency-small-requests" => Workload::SmallRequests {

@@ -7,7 +7,7 @@ NIGHTLY          ?= nightly
 V                ?=
 
 # Crates verified by publish-dry-run, in dependency order.
-PUBLISH_CRATES   := praxis-bench
+PUBLISH_CRATES   := praxis-proxy-benchmarks
 
 # Tools verified by check-prereqs before their consuming targets run.
 LINT_CMDS        := cargo cargo-machete

@@ -108,16 +108,33 @@ impl Runner {
             self.run_load(proxy, self.scenario.warmup).await?;
         }
 
+        let mut results = self.run_measurement_rounds_with_metrics(proxy).await?;
+        results.compute_median();
+        info!(scenario = %self.scenario.name, "benchmark complete");
+
+        self.cleanup(proxy, &mut proxy_proc, &mut backend).await;
+        Ok(results)
+    }
+
+    /// Run all measurement rounds, wrapping them with Docker
+    /// resource-metrics collection when the proxy is containerized.
+    async fn run_measurement_rounds_with_metrics(
+        &self,
+        proxy: &dyn ProxyConfig,
+    ) -> Result<ScenarioResults, BenchmarkError> {
         let mut collector = proxy.container_name().map(DockerStatsCollector::new);
-        if let Some(ref mut c) = collector {
-            info!(container = c.container_name(), "starting resource metrics collection");
-            c.start();
+        if let Some(active) = collector.as_mut() {
+            info!(
+                container = active.container_name(),
+                "starting resource metrics collection"
+            );
+            active.start();
         }
 
         let mut results = self.run_measurement_rounds(proxy).await?;
 
         let resource = match collector {
-            Some(c) => c.stop().await,
+            Some(stats_collector) => stats_collector.stop().await,
             None => None,
         };
         if resource.is_some() {
@@ -126,11 +143,6 @@ impl Runner {
         for run in &mut results.runs {
             run.resource.clone_from(&resource);
         }
-
-        results.compute_median();
-        info!(scenario = %self.scenario.name, "benchmark complete");
-
-        self.cleanup(proxy, &mut proxy_proc, &mut backend).await;
         Ok(results)
     }
 
@@ -181,11 +193,16 @@ impl Runner {
         let mut results = ScenarioResults {
             scenario: self.scenario.name.clone(),
             proxy: proxy.name().into(),
-            runs: Vec::with_capacity(self.scenario.runs as usize),
+            runs: Vec::with_capacity(usize::try_from(self.scenario.runs).unwrap_or(usize::MAX)),
             median: None,
         };
         for i in 0..self.scenario.runs {
-            info!(run = i + 1, total = self.scenario.runs, "measurement run");
+            #[expect(
+                clippy::arithmetic_side_effects,
+                reason = "run index + 1 cannot overflow for realistic run counts"
+            )]
+            let run_number = i + 1;
+            info!(run = run_number, total = self.scenario.runs, "measurement run");
             let json = self.run_load(proxy, self.scenario.duration).await?;
             let result = self.parse_result(&json, proxy.name())?;
             results.runs.push(result);
@@ -223,7 +240,11 @@ impl Runner {
             Workload::TcpThroughput | Workload::TcpConnectionRate | Workload::HighConnectionCount { .. } => {
                 fortio::parse(json, &self.scenario.name, proxy_name, &self.commit, raw)
             },
-            _ => vegeta::parse(json, &self.scenario.name, proxy_name, &self.commit, raw),
+            Workload::SmallRequests { .. }
+            | Workload::LargePayload { .. }
+            | Workload::LargePayloadHighConcurrency { .. }
+            | Workload::Sustained
+            | Workload::Ramp { .. } => vegeta::parse(json, &self.scenario.name, proxy_name, &self.commit, raw),
         }
     }
 }
@@ -332,7 +353,9 @@ async fn run_ramp(
     step: u32,
     total_duration: Duration,
 ) -> Result<String, BenchmarkError> {
-    let steps: Vec<u32> = (start_qps..=end_qps).step_by(step.max(1) as usize).collect();
+    let steps: Vec<u32> = (start_qps..=end_qps)
+        .step_by(usize::try_from(step.max(1)).unwrap_or(1))
+        .collect();
     if steps.is_empty() {
         return Err(BenchmarkError::ToolFailed {
             tool: "ramp".into(),
@@ -362,7 +385,12 @@ async fn prepare_ramp_targets(
     tokio::fs::write(&target_path, format!("GET {url}\n"))
         .await
         .map_err(BenchmarkError::Io)?;
-    let step_duration = Duration::from_secs((total_duration.as_secs() / steps.len() as u64).max(1));
+    #[expect(
+        clippy::arithmetic_side_effects,
+        reason = "division by step count cannot overflow; step count is always non-empty here"
+    )]
+    let step_duration =
+        Duration::from_secs((total_duration.as_secs() / u64::try_from(steps.len()).unwrap_or(1)).max(1));
     Ok((dir, target_path, step_duration))
 }
 
@@ -489,7 +517,11 @@ mod tests {
                 assert_eq!(code, -1, "empty ramp should report code -1");
                 assert_eq!(tool, "ramp", "empty ramp should tag the ramp tool");
             },
-            other => panic!("expected ToolFailed, got {other}"),
+            other @ (BenchmarkError::ToolNotFound(_)
+            | BenchmarkError::ParseError { .. }
+            | BenchmarkError::Io(_)
+            | BenchmarkError::Json(_)
+            | BenchmarkError::Yaml(_)) => panic!("expected ToolFailed, got {other}"),
         }
     }
 

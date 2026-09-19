@@ -1,14 +1,15 @@
 [package]
-name = "praxis-bench"
+name = "praxis-proxy-benchmarks"
 description = "Generic load-testing and comparison benchmark tool for the Praxis proxy"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish = false
+repository = "https://github.com/praxis-proxy/benchmarks"
+publish = true
 
 [lib]
-name = "praxis_bench"
+name = "praxis_proxy_benchmarks"
 path = "src/lib.rs"
 
 [[bin]]

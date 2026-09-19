@@ -1,6 +1,6 @@
 //! Report comparison and regression detection for `cargo xtask benchmark compare`.
 
-use praxis_bench::result::{ComparativeResults, ScenarioResults};
+use praxis_proxy_benchmarks::result::{ComparativeResults, ScenarioResults};
 
 use super::cli::CompareArgs;
 
@@ -72,8 +72,8 @@ fn print_comparison_header() {
 
 /// Print comparison rows for each praxis scenario; returns `true` if any regressed.
 fn print_comparison_rows(
-    current: &praxis_bench::report::BenchmarkReport,
-    baseline: &praxis_bench::report::BenchmarkReport,
+    current: &praxis_proxy_benchmarks::report::BenchmarkReport,
+    baseline: &praxis_proxy_benchmarks::report::BenchmarkReport,
     threshold: f64,
 ) -> bool {
     let mut any_regressed = false;
@@ -125,7 +125,7 @@ fn print_comparison_row(current: &ScenarioResults, baseline: &ScenarioResults, t
 mod tests {
     use std::collections::BTreeMap;
 
-    use praxis_bench::{
+    use praxis_proxy_benchmarks::{
         report::BenchmarkReport,
         result::{BenchmarkResult, Environment, ErrorMetrics, LatencyMetrics, ThroughputMetrics},
     };

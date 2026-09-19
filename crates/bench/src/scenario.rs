@@ -19,7 +19,7 @@ pub use workload::Workload;
 /// Configuration for a benchmark scenario.
 ///
 /// ```
-/// use praxis_bench::scenario::Scenario;
+/// use praxis_proxy_benchmarks::scenario::Scenario;
 ///
 /// let s = Scenario::default();
 /// assert_eq!(s.runs, 5);
@@ -65,9 +65,9 @@ mod tests {
 
     #[test]
     fn scenario_defaults() {
-        let s = Scenario::default();
-        assert_eq!(s.warmup, Duration::from_secs(30));
-        assert_eq!(s.duration, Duration::from_secs(120));
-        assert_eq!(s.runs, 5);
+        let scenario = Scenario::default();
+        assert_eq!(scenario.warmup, Duration::from_secs(30));
+        assert_eq!(scenario.duration, Duration::from_secs(120));
+        assert_eq!(scenario.runs, 5);
     }
 }

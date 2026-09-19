@@ -10,7 +10,7 @@ The shared benchmarking and performance-testing
 tooling for the praxis-proxy project, intended to be
 usable across repositories with a standard proxy build
 (praxis, ai, experimental). The sole member is
-`praxis-bench` (`crates/praxis-bench`), a lib + bin
+`praxis-proxy-benchmarks` (`crates/bench`), a lib + bin
 crate: the library is the load-test / comparison
 harness (runner, scenarios, result/report types,
 Docker stats, vegeta/fortio wrappers, and a

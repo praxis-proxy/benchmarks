@@ -4,7 +4,7 @@
 //! by the operator (`--image`), so any Praxis-compatible build can be
 //! benchmarked without this tool depending on its source.
 
-use praxis_bench::proxy::{EnvoyConfig, HaproxyConfig, NginxConfig, PraxisConfig, ProxyConfig};
+use praxis_proxy_benchmarks::proxy::{EnvoyConfig, HaproxyConfig, NginxConfig, PraxisConfig, ProxyConfig};
 
 use super::cli::Args;
 
@@ -16,7 +16,7 @@ use super::cli::Args;
 ///
 /// All proxies run containerized with identical resource constraints.
 ///
-/// [`ProxyConfig`]: praxis_bench::proxy::ProxyConfig
+/// [`ProxyConfig`]: praxis_proxy_benchmarks::proxy::ProxyConfig
 pub(crate) fn build_proxy_config(name: &str, args: &Args, praxis_image: &str) -> Box<dyn ProxyConfig> {
     match name {
         "praxis" => Box::new(PraxisConfig::new(praxis_image.to_owned())),

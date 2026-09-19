@@ -17,6 +17,10 @@ const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Poll a TCP address until a connection succeeds or timeout.
 pub(crate) async fn wait_for_tcp(addr: &str, timeout: Duration) -> Result<(), BenchmarkError> {
+    #[expect(
+        clippy::arithmetic_side_effects,
+        reason = "Instant + Duration cannot overflow for realistic timeout values"
+    )]
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         if tokio::time::Instant::now() >= deadline {
@@ -41,6 +45,10 @@ pub(crate) async fn wait_for_tcp(addr: &str, timeout: Duration) -> Result<(), Be
 
 /// Poll an HTTP URL until it returns 200 or timeout.
 pub(crate) async fn wait_for_http(url: &str, timeout: Duration) -> Result<(), BenchmarkError> {
+    #[expect(
+        clippy::arithmetic_side_effects,
+        reason = "Instant + Duration cannot overflow for realistic timeout values"
+    )]
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         if tokio::time::Instant::now() >= deadline {
@@ -106,10 +114,11 @@ pub fn detect_commit() -> String {
         .args(["rev-parse", "--short", "HEAD"])
         .output()
         .ok()
-        .and_then(|o| {
-            o.status
+        .and_then(|output| {
+            output
+                .status
                 .success()
-                .then(|| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+                .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
         })
         .unwrap_or_else(|| "unknown".into())
 }
@@ -164,7 +173,11 @@ mod tests {
                 assert_eq!(code, -1, "timeout should report code -1");
                 assert_eq!(tool, "health_check", "timeout should tag the health_check tool");
             },
-            other => panic!("expected ToolFailed, got {other}"),
+            other @ (BenchmarkError::ToolNotFound(_)
+            | BenchmarkError::ParseError { .. }
+            | BenchmarkError::Io(_)
+            | BenchmarkError::Json(_)
+            | BenchmarkError::Yaml(_)) => panic!("expected ToolFailed, got {other}"),
         }
     }
 
@@ -194,7 +207,11 @@ mod tests {
             .expect_err("zero timeout should error");
         match err {
             BenchmarkError::ToolFailed { code, .. } => assert_eq!(code, -1, "timeout should report code -1"),
-            other => panic!("expected ToolFailed, got {other}"),
+            other @ (BenchmarkError::ToolNotFound(_)
+            | BenchmarkError::ParseError { .. }
+            | BenchmarkError::Io(_)
+            | BenchmarkError::Json(_)
+            | BenchmarkError::Yaml(_)) => panic!("expected ToolFailed, got {other}"),
         }
     }
 

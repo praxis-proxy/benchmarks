@@ -3,7 +3,7 @@
 /// Errors that can occur during benchmark execution.
 ///
 /// ```
-/// use praxis_bench::error::BenchmarkError;
+/// use praxis_proxy_benchmarks::error::BenchmarkError;
 ///
 /// let err = BenchmarkError::ToolNotFound("vegeta".into());
 /// assert_eq!(err.to_string(), "tool not found: vegeta");

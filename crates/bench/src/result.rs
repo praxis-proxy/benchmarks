@@ -13,7 +13,7 @@ use crate::error::BenchmarkError;
 /// Latency metrics from a benchmark run.
 ///
 /// ```
-/// use praxis_bench::result::LatencyMetrics;
+/// use praxis_proxy_benchmarks::result::LatencyMetrics;
 ///
 /// let m = LatencyMetrics::zeroed();
 /// assert_eq!(m.p99, 0.0);
@@ -132,7 +132,7 @@ pub struct ErrorMetrics {
 /// Result of a single benchmark run.
 ///
 /// ```
-/// use praxis_bench::result::{
+/// use praxis_proxy_benchmarks::result::{
 ///     BenchmarkResult, Environment, ErrorMetrics, LatencyMetrics, ThroughputMetrics,
 /// };
 ///
@@ -206,7 +206,7 @@ pub struct BenchmarkResult {
 /// Aggregated results from running a scenario (multiple runs).
 ///
 /// ```
-/// use praxis_bench::result::ScenarioResults;
+/// use praxis_proxy_benchmarks::result::ScenarioResults;
 ///
 /// let results = ScenarioResults {
 ///     scenario: "test".into(),
@@ -239,7 +239,7 @@ impl ScenarioResults {
     /// dragging throughput down (or vice versa).
     ///
     /// ```
-    /// use praxis_bench::result::{
+    /// use praxis_proxy_benchmarks::result::{
     ///     BenchmarkResult, Environment, ErrorMetrics, LatencyMetrics, ScenarioResults,
     ///     ThroughputMetrics,
     /// };
@@ -322,8 +322,8 @@ impl ScenarioResults {
     /// inter-run variance is too high for the comparison to be
     /// trustworthy (e.g. noisy CI runner).
     pub fn is_stable(&self, max_cv: f64) -> bool {
-        let p99s: Vec<f64> = self.runs.iter().map(|r| r.latency.p99).collect();
-        let rpss: Vec<f64> = self.runs.iter().map(|r| r.throughput.requests_per_sec).collect();
+        let p99s: Vec<f64> = self.runs.iter().map(|run| run.latency.p99).collect();
+        let rpss: Vec<f64> = self.runs.iter().map(|run| run.throughput.requests_per_sec).collect();
         let p99_cv = coefficient_of_variation(&p99s);
         let rps_cv = coefficient_of_variation(&rpss);
         tracing::debug!(p99_cv, rps_cv, max_cv, "stability check");
@@ -410,22 +410,22 @@ impl ScenarioResults {
 /// Compute per-metric median latency across runs.
 fn median_latency(runs: &[BenchmarkResult]) -> LatencyMetrics {
     LatencyMetrics {
-        min: f64_median(runs.iter().map(|r| r.latency.min)),
-        max: f64_median(runs.iter().map(|r| r.latency.max)),
-        mean: f64_median(runs.iter().map(|r| r.latency.mean)),
-        p50: f64_median(runs.iter().map(|r| r.latency.p50)),
-        p90: f64_median(runs.iter().map(|r| r.latency.p90)),
-        p95: f64_median(runs.iter().map(|r| r.latency.p95)),
-        p99: f64_median(runs.iter().map(|r| r.latency.p99)),
-        p99_9: f64_median(runs.iter().map(|r| r.latency.p99_9)),
+        min: f64_median(runs.iter().map(|run| run.latency.min)),
+        max: f64_median(runs.iter().map(|run| run.latency.max)),
+        mean: f64_median(runs.iter().map(|run| run.latency.mean)),
+        p50: f64_median(runs.iter().map(|run| run.latency.p50)),
+        p90: f64_median(runs.iter().map(|run| run.latency.p90)),
+        p95: f64_median(runs.iter().map(|run| run.latency.p95)),
+        p99: f64_median(runs.iter().map(|run| run.latency.p99)),
+        p99_9: f64_median(runs.iter().map(|run| run.latency.p99_9)),
     }
 }
 
 /// Compute per-metric median throughput across runs.
 fn median_throughput(runs: &[BenchmarkResult]) -> ThroughputMetrics {
     ThroughputMetrics {
-        requests_per_sec: f64_median(runs.iter().map(|r| r.throughput.requests_per_sec)),
-        bytes_per_sec: f64_median(runs.iter().map(|r| r.throughput.bytes_per_sec)),
+        requests_per_sec: f64_median(runs.iter().map(|run| run.throughput.requests_per_sec)),
+        bytes_per_sec: f64_median(runs.iter().map(|run| run.throughput.bytes_per_sec)),
     }
 }
 
@@ -436,11 +436,11 @@ fn median_throughput(runs: &[BenchmarkResult]) -> ThroughputMetrics {
 /// medians. Zeroing these (as the previous placeholder did) made the
 /// headline median row report a clean run even when every request failed.
 fn median_errors(runs: &[BenchmarkResult]) -> ErrorMetrics {
-    let non_2xx_values: Vec<u64> = runs.iter().filter_map(|r| r.errors.non_2xx).collect();
+    let non_2xx_values: Vec<u64> = runs.iter().filter_map(|run| run.errors.non_2xx).collect();
     ErrorMetrics {
         non_2xx: (!non_2xx_values.is_empty()).then(|| u64_median(non_2xx_values.into_iter())),
-        timeouts: u64_median(runs.iter().map(|r| r.errors.timeouts)),
-        connect_failures: u64_median(runs.iter().map(|r| r.errors.connect_failures)),
+        timeouts: u64_median(runs.iter().map(|run| run.errors.timeouts)),
+        connect_failures: u64_median(runs.iter().map(|run| run.errors.connect_failures)),
     }
 }
 
@@ -450,18 +450,20 @@ fn median_errors(runs: &[BenchmarkResult]) -> ErrorMetrics {
 /// each field is the median over the runs that reported it. The previous
 /// hardcoded `None` blanked the CPU and memory panels of every chart.
 fn median_resource(runs: &[BenchmarkResult]) -> Option<ResourceMetrics> {
-    let present: Vec<&ResourceMetrics> = runs.iter().filter_map(|r| r.resource.as_ref()).collect();
+    let present: Vec<&ResourceMetrics> = runs.iter().filter_map(|run| run.resource.as_ref()).collect();
     (!present.is_empty()).then(|| ResourceMetrics {
-        cpu_percent_avg: f64_median(present.iter().map(|m| m.cpu_percent_avg)),
-        cpu_percent_peak: f64_median(present.iter().map(|m| m.cpu_percent_peak)),
-        memory_rss_bytes_avg: u64_median(present.iter().map(|m| m.memory_rss_bytes_avg)),
-        memory_rss_bytes_peak: u64_median(present.iter().map(|m| m.memory_rss_bytes_peak)),
+        cpu_percent_avg: f64_median(present.iter().map(|metrics| metrics.cpu_percent_avg)),
+        cpu_percent_peak: f64_median(present.iter().map(|metrics| metrics.cpu_percent_peak)),
+        memory_rss_bytes_avg: u64_median(present.iter().map(|metrics| metrics.memory_rss_bytes_avg)),
+        memory_rss_bytes_peak: u64_median(present.iter().map(|metrics| metrics.memory_rss_bytes_peak)),
     })
 }
 
 /// Extract p99 and rps from a median result.
 fn extract_metrics(median: Option<&BenchmarkResult>) -> (f64, f64) {
-    median.map_or((0.0, 0.0), |m| (m.latency.p99, m.throughput.requests_per_sec))
+    median.map_or((0.0, 0.0), |result| {
+        (result.latency.p99, result.throughput.requests_per_sec)
+    })
 }
 
 /// Compute relative change between current and baseline values.
@@ -478,15 +480,18 @@ fn relative_change(current: f64, baseline: f64) -> f64 {
 /// Compute the median of an iterator of `f64` values.
 ///
 /// ```
-/// use praxis_bench::result::f64_median;
+/// use praxis_proxy_benchmarks::result::f64_median;
 ///
-/// let m = f64_median([3.0, 1.0, 2.0].into_iter());
-/// assert!((m - 2.0).abs() < 1e-9);
+/// let median = f64_median([3.0, 1.0, 2.0].into_iter());
+/// assert!((median - 2.0).abs() < 1e-9);
 /// ```
-pub fn f64_median(values: impl Iterator<Item = f64>) -> f64 {
-    let mut v: Vec<f64> = values.collect();
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    v.get(v.len() / 2).copied().unwrap_or(0.0)
+pub fn f64_median<I>(values: I) -> f64
+where
+    I: Iterator<Item = f64>,
+{
+    let mut sorted_values: Vec<f64> = values.collect();
+    sorted_values.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+    sorted_values.get(sorted_values.len() / 2).copied().unwrap_or(0.0)
 }
 
 /// Compute the median of an iterator of `u64` values without floats.
@@ -495,15 +500,18 @@ pub fn f64_median(values: impl Iterator<Item = f64>) -> f64 {
 /// casts) is needed.
 ///
 /// ```
-/// use praxis_bench::result::u64_median;
+/// use praxis_proxy_benchmarks::result::u64_median;
 ///
 /// assert_eq!(u64_median([3, 1, 2].into_iter()), 2);
 /// assert_eq!(u64_median(std::iter::empty()), 0);
 /// ```
-pub fn u64_median(values: impl Iterator<Item = u64>) -> u64 {
-    let mut v: Vec<u64> = values.collect();
-    v.sort_unstable();
-    v.get(v.len() / 2).copied().unwrap_or(0)
+pub fn u64_median<I>(values: I) -> u64
+where
+    I: Iterator<Item = u64>,
+{
+    let mut sorted_values: Vec<u64> = values.collect();
+    sorted_values.sort_unstable();
+    sorted_values.get(sorted_values.len() / 2).copied().unwrap_or(0)
 }
 
 /// Coefficient of variation (stddev / mean) for a slice of values.
@@ -511,7 +519,7 @@ pub fn u64_median(values: impl Iterator<Item = u64>) -> u64 {
 /// Returns 0.0 for empty slices or zero-mean data.
 ///
 /// ```
-/// use praxis_bench::result::coefficient_of_variation;
+/// use praxis_proxy_benchmarks::result::coefficient_of_variation;
 ///
 /// let cv = coefficient_of_variation(&[100.0, 100.0, 100.0]);
 /// assert!(cv.abs() < 1e-9, "identical values have CV = 0");
@@ -525,7 +533,7 @@ pub fn coefficient_of_variation(values: &[f64]) -> f64 {
     if mean.abs() < f64::EPSILON {
         return 0.0;
     }
-    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
+    let variance = values.iter().map(|value| (value - mean).powi(2)).sum::<f64>() / n;
     variance.sqrt() / mean
 }
 
@@ -582,9 +590,9 @@ pub fn current_environment() -> Environment {
         .ok()
         .and_then(|info| {
             info.lines()
-                .find(|l| l.starts_with("model name"))
-                .and_then(|l| l.split(':').nth(1))
-                .map(|s| s.trim().to_owned())
+                .find(|line| line.starts_with("model name"))
+                .and_then(|line| line.split(':').nth(1))
+                .map(|model| model.trim().to_owned())
         })
         .unwrap_or_else(|| "unknown".into());
 
@@ -944,26 +952,29 @@ mod tests {
 
     #[test]
     fn f64_median_odd_count() {
-        let m = f64_median([3.0, 1.0, 2.0].into_iter());
-        assert!((m - 2.0).abs() < 1e-9, "median of [1,2,3] should be 2.0");
+        let median = f64_median([3.0, 1.0, 2.0].into_iter());
+        assert!((median - 2.0).abs() < 1e-9, "median of [1,2,3] should be 2.0");
     }
 
     #[test]
     fn f64_median_even_count() {
-        let m = f64_median([4.0, 1.0, 3.0, 2.0].into_iter());
-        assert!((m - 3.0).abs() < 1e-9, "median of 4 values should take upper-middle");
+        let median = f64_median([4.0, 1.0, 3.0, 2.0].into_iter());
+        assert!(
+            (median - 3.0).abs() < 1e-9,
+            "median of 4 values should take upper-middle"
+        );
     }
 
     #[test]
     fn f64_median_single() {
-        let m = f64_median([42.0].into_iter());
-        assert!((m - 42.0).abs() < 1e-9, "single value median should be itself");
+        let median = f64_median([42.0].into_iter());
+        assert!((median - 42.0).abs() < 1e-9, "single value median should be itself");
     }
 
     #[test]
     fn f64_median_empty() {
-        let m = f64_median(std::iter::empty());
-        assert!((m - 0.0).abs() < 1e-9, "empty iterator median should be 0.0");
+        let median = f64_median(std::iter::empty());
+        assert!((median - 0.0).abs() < 1e-9, "empty iterator median should be 0.0");
     }
 
     #[test]

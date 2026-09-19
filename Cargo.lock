@@ -426,7 +426,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "praxis-bench"
+name = "praxis-proxy-benchmarks"
 version = "0.1.0"
 dependencies = [
  "chrono",

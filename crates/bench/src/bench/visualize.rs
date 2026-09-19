@@ -1,7 +1,7 @@
 //! `cargo xtask benchmark visualize` SVG chart generator.
 
 use clap::Parser;
-use praxis_bench::report::BenchmarkReport;
+use praxis_proxy_benchmarks::report::BenchmarkReport;
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -135,7 +135,7 @@ fn unique_scenarios(report: &BenchmarkReport) -> Vec<String> {
 /// Extract a per-proxy, per-scenario metric matrix.
 fn extract_matrix<F>(report: &BenchmarkReport, scenarios: &[String], metric: F) -> Vec<Vec<f64>>
 where
-    F: Fn(&praxis_bench::result::BenchmarkResult) -> f64,
+    F: Fn(&praxis_proxy_benchmarks::result::BenchmarkResult) -> f64,
 {
     report
         .proxies
@@ -173,7 +173,7 @@ struct ChartDef {
     y_label: &'static str,
 
     /// Metric extractor.
-    extract: fn(&praxis_bench::result::BenchmarkResult) -> f64,
+    extract: fn(&praxis_proxy_benchmarks::result::BenchmarkResult) -> f64,
 }
 
 /// Map a proxy name to its chart bar color.
@@ -383,7 +383,7 @@ fn shorten_scenario(name: &str) -> String {
     reason = "tests"
 )]
 mod tests {
-    use praxis_bench::result::{
+    use praxis_proxy_benchmarks::result::{
         BenchmarkResult, Environment, ErrorMetrics, LatencyMetrics, ResourceMetrics, ScenarioResults, ThroughputMetrics,
     };
 

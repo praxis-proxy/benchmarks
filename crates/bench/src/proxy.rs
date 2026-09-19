@@ -20,13 +20,11 @@ pub use praxis::PraxisConfig;
 ///
 /// Resolved from `PRAXIS_BENCH_CONFIG_DIR` when set (the container image
 /// points this at the bundled configs), otherwise the in-tree
-/// `crates/praxis-bench/comparison/configs` relative to the repository root
+/// `crates/bench/comparison/configs` relative to the repository root
 /// for local `cargo run`.
 pub(crate) fn config_dir() -> PathBuf {
-    std::env::var_os("PRAXIS_BENCH_CONFIG_DIR").map_or_else(
-        || PathBuf::from("crates/praxis-bench/comparison/configs"),
-        PathBuf::from,
-    )
+    std::env::var_os("PRAXIS_BENCH_CONFIG_DIR")
+        .map_or_else(|| PathBuf::from("crates/bench/comparison/configs"), PathBuf::from)
 }
 
 // -----------------------------------------------------------------------------

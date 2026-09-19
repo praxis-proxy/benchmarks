@@ -133,11 +133,11 @@ pub fn start_echo_server(port: u16) -> Result<tokio::process::Child, BenchmarkEr
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
+        .map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
                 BenchmarkError::ToolNotFound("fortio".into())
             } else {
-                BenchmarkError::Io(e)
+                BenchmarkError::Io(err)
             }
         })?;
 
@@ -157,11 +157,11 @@ pub async fn run(config: &FortioConfig) -> Result<String, BenchmarkError> {
         .args(&args)
         .output()
         .await
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
+        .map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
                 BenchmarkError::ToolNotFound("fortio".into())
             } else {
-                BenchmarkError::Io(e)
+                BenchmarkError::Io(err)
             }
         })?;
 
@@ -217,12 +217,12 @@ fn resolve_fortio_target(config: &FortioConfig) -> String {
 
 /// Look up a percentile value from Fortio's percentile list.
 fn lookup_percentile(percentiles: &[FortioPercentile], target: f64) -> f64 {
-    if let Some(p) = percentiles.iter().find(|p| (p.percentile - target).abs() < 0.01) {
-        return p.value;
+    if let Some(perc) = percentiles.iter().find(|perc| (perc.percentile - target).abs() < 0.01) {
+        return perc.value;
     }
 
-    let below = percentiles.iter().rev().find(|p| p.percentile < target);
-    let above = percentiles.iter().find(|p| p.percentile > target);
+    let below = percentiles.iter().rev().find(|perc| perc.percentile < target);
+    let above = percentiles.iter().find(|perc| perc.percentile > target);
 
     match (below, above) {
         (Some(lo), Some(hi)) => {
@@ -249,9 +249,9 @@ pub fn parse(
     commit: &str,
     include_raw: bool,
 ) -> Result<BenchmarkResult, BenchmarkError> {
-    let report: FortioReport = serde_json::from_str(json).map_err(|e| BenchmarkError::ParseError {
+    let report: FortioReport = serde_json::from_str(json).map_err(|err| BenchmarkError::ParseError {
         tool: "fortio".into(),
-        reason: e.to_string(),
+        reason: err.to_string(),
     })?;
 
     let raw_report = if include_raw {
@@ -277,24 +277,29 @@ pub fn parse(
 
 /// Build latency metrics from a Fortio histogram.
 fn fortio_latency(hist: &FortioDurationHistogram) -> crate::result::LatencyMetrics {
-    let p = &hist.percentiles;
+    let percentiles = &hist.percentiles;
     crate::result::LatencyMetrics {
         min: hist.min,
         max: hist.max,
         mean: hist.avg,
-        p50: lookup_percentile(p, 50.0),
-        p90: lookup_percentile(p, 90.0),
-        p95: lookup_percentile(p, 95.0),
-        p99: lookup_percentile(p, 99.0),
-        p99_9: lookup_percentile(p, 99.9),
+        p50: lookup_percentile(percentiles, 50.0),
+        p90: lookup_percentile(percentiles, 90.0),
+        p95: lookup_percentile(percentiles, 95.0),
+        p99: lookup_percentile(percentiles, 99.0),
+        p99_9: lookup_percentile(percentiles, 99.9),
     }
 }
 
 /// Compute throughput metrics from a Fortio report.
 fn fortio_throughput(report: &FortioReport) -> crate::result::ThroughputMetrics {
+    #[expect(clippy::arithmetic_side_effects, reason = "byte counts cannot overflow")]
     let total_bytes = report.bytes_sent + report.bytes_received;
     let duration_secs = report.actual_duration_ns / 1_000_000_000.0;
-    #[expect(clippy::cast_precision_loss, reason = "precision loss acceptable")]
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "precision loss acceptable"
+    )]
     let bytes_per_sec = if duration_secs > 0.0 {
         total_bytes as f64 / duration_secs
     } else {
@@ -308,12 +313,12 @@ fn fortio_throughput(report: &FortioReport) -> crate::result::ThroughputMetrics 
 
 /// Extract error metrics from a Fortio report.
 fn fortio_errors(report: &FortioReport) -> crate::result::ErrorMetrics {
-    let is_http = report.ret_codes.keys().any(|c| c.parse::<u16>().is_ok());
+    let is_http = report.ret_codes.keys().any(|code| code.parse::<u16>().is_ok());
     let non_2xx = is_http.then(|| {
         report
             .ret_codes
             .iter()
-            .filter(|(code, _)| code.parse::<u16>().is_ok_and(|c| !(200..300).contains(&c)))
+            .filter(|(code, _)| code.parse::<u16>().is_ok_and(|status| !(200..300).contains(&status)))
             .map(|(_, count)| count)
             .sum()
     });
@@ -502,7 +507,11 @@ mod tests {
             BenchmarkError::ParseError { tool, .. } => {
                 assert_eq!(tool, "fortio", "parse error should reference fortio");
             },
-            other => panic!("expected ParseError, got: {other}"),
+            other @ (BenchmarkError::ToolNotFound(_)
+            | BenchmarkError::ToolFailed { .. }
+            | BenchmarkError::Io(_)
+            | BenchmarkError::Json(_)
+            | BenchmarkError::Yaml(_)) => panic!("expected ParseError, got: {other}"),
         }
     }
 

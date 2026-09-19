@@ -31,12 +31,12 @@ pub struct ScenarioSettings {
 
 impl ScenarioSettings {
     /// Build settings from a [`Scenario`].
-    pub fn from_scenario(s: &Scenario) -> Self {
+    pub fn from_scenario(scenario: &Scenario) -> Self {
         Self {
-            warmup_secs: s.warmup.as_secs(),
-            duration_secs: s.duration.as_secs(),
-            runs: s.runs,
-            workload: workload_params(&s.workload),
+            warmup_secs: scenario.warmup.as_secs(),
+            duration_secs: scenario.duration.as_secs(),
+            runs: scenario.runs,
+            workload: workload_params(&scenario.workload),
         }
     }
 }
@@ -76,7 +76,7 @@ fn workload_params(workload: &Workload) -> BTreeMap<String, serde_json::Value> {
 pub fn settings_map(scenarios: &[Scenario]) -> BTreeMap<String, ScenarioSettings> {
     scenarios
         .iter()
-        .map(|s| (s.name.clone(), ScenarioSettings::from_scenario(s)))
+        .map(|scenario| (scenario.name.clone(), ScenarioSettings::from_scenario(scenario)))
         .collect()
 }
 
