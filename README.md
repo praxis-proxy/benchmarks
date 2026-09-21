@@ -2,13 +2,9 @@
 
 `praxis-bench` is the shared benchmarking and performance-testing tool for
 [Praxis](https://github.com/praxis-proxy/praxis). It load-tests a Praxis (or
-compatible) proxy image and produces comparison reports against Envoy, NGINX,
-and HAProxy baselines, so any repository with a standard proxy build (praxis,
-ai, experimental) can measure it the same way.
-
-The proxy under test is treated as an opaque container image: plug in your
-image with `--image` and get results. The tool does not depend on Praxis
-source.
+compatible) proxy image and produces comparison reports against other proxy
+servers. Any repository with a standard proxy build (praxis, ai, experimental)
+can measure it the same way.
 
 ## Usage
 
