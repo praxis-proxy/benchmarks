@@ -6,9 +6,6 @@
 | ------- | ---------- |
 | 0.1.x   | No (Alpha) |
 
-Only the latest patch release of each minor version
-receives security updates.
-
 ## Reporting a Vulnerability
 
 Please report security vulnerabilities privately via
@@ -40,3 +37,11 @@ a standardized response timeline.
   effort, information disclosure of limited scope
 - **Low**: Issues requiring unlikely configurations or
   minimal impact
+
+## Safe Harbor
+
+We consider security research conducted in good faith to
+be authorized. We will not pursue legal action against
+researchers who follow this policy and report findings
+responsibly. We appreciate the effort you put into
+keeping this project secure.
