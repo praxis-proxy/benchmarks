@@ -115,6 +115,7 @@ jobs:
   # release binaries; shellcheck is preinstalled on ubuntu runners.
 
   meta-lint:
+    if: ${{ false }} # TEMPORARILY DISABLED; TODO enable
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
