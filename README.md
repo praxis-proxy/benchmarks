@@ -1,4 +1,6 @@
 # Praxis Benchmarks
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fpraxis-proxy%2Fbenchmarks.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fpraxis-proxy%2Fbenchmarks?ref=badge_shield)
+
 
 `praxis-bench` is the shared benchmarking and performance-testing tool for
 [Praxis](https://github.com/praxis-proxy/praxis). It load-tests a Praxis (or
@@ -52,6 +54,9 @@ machine-enforced quality standards used across the organization.
   descriptions, conventional commits, DCO sign-off, and signed commits
 - **Everything else**: markdown, TOML, shell, spelling, and workflow files are
   linted too
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fpraxis-proxy%2Fbenchmarks.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fpraxis-proxy%2Fbenchmarks?ref=badge_large)
 
 ## Development
 
